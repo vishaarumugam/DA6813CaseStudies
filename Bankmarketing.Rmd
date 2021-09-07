@@ -1,6 +1,6 @@
 ---
 title: "BankMarketing"
-group members: "..."
+group members: "Michael Grogan"
 output: html_document
 ---
 
@@ -8,6 +8,7 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 library(caret)
 library(MASS)
+setwd("~/GitHub/DA6813CaseStudies")
 ```
 
 ## I - Executive Summary
@@ -118,9 +119,9 @@ predlog<-predict(bankLOG,banktest)
 predlogfull<-predict(bankLOGfull,banktest)
 
 
-confusionMatrix(banktest$y,predlog)
+confusionMatrix(predlog,banktest$y)
 
-confusionMatrix(banktest$y,predlogfull)
+confusionMatrix(predlogfull,banktest$y)
 
 
 ```
@@ -141,7 +142,7 @@ bankrad
 predrad<-predict(bankrad,banktest)
 
 
-confusionMatrix(banktest$y,predrad)
+confusionMatrix(predrad,banktest$y)
 ```
 
 
@@ -162,7 +163,7 @@ bankrf
 predrf<-predict(bankrf,banktest)
 
 
-confusionMatrix(banktest$y,predrf)
+confusionMatrix(predrf,banktest$y)
 ```
 
 
