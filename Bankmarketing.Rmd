@@ -138,7 +138,8 @@ TC <- trainControl(method = "boot", number=50,classProbs=TRUE,summaryFunction = 
 bankrad <- train(Class~pdays+poutcome+job+loan+contact+campaign+month+cons.price.idx+cons.conf.idx+emp.var.rate, data=banktrain,
                  method = "svmLinear",
                  metric="Spec",
-                 trControl = TC)
+                 trControl = TC,
+                 tuneGrid = expand.grid(C = seq(0, 2, length = 20)))
 bankrad
 
 predrad<-predict(bankrad,banktest)
