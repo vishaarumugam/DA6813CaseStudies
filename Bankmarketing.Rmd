@@ -1,0 +1,179 @@
+---
+title: "BankMarketing"
+group members: "..."
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(caret)
+library(MASS)
+```
+
+## I - Executive Summary
+## II - The Problem
+
+The task is to analyze the dataset of customers provided by the banking institution, and determine what combination of personal characteristics and external factors are associated with the highest likelihood of the client subscribing to a term deposit. 
+
+Ascertaining which factors are most correlated with subscribing to term deposits will allow the bank to save time and money by focusing on clients that are likely to subscribe, and avoiding those that are not.
+
+## III - Review of Related Literature
+## IV - Methodology
+
+Read data and check for missing values
+As is outlined in the case, "duration" serves no predictive purpose, because it can only be known after the call is made, and can't be used in the decision for which customer to call, so it is removed.
+
+The data also needs to be balanced, because with the unmodified dataset, a classifier could achieve 90% accuracy by predicting a 'no' response for every observation.
+
+Upsampling changes y variable name to Class.
+
+First get an idea of most important variables using stepwise feature selection using AIC
+
+Test several models using the full model and "important" variables (logistic regression, random forest, linear SVC) using bootstrapped cross validation to optimize tuning variables
+
+## V - Data
+
+```{r}
+bank<-read.csv('bank-additional.csv',sep=";",stringsAsFactors = T)
+sum(is.na(bank))
+#duration in column 11
+bank<-bank[-11]
+
+#replace month abbreviations with numbers
+monthord<-as.character(bank$month)
+mn<-c('jan','feb','mar','apr','may','jun','jul',
+  'aug','sep','oct','nov','dec')
+md<-c(1,2,3,4,5,6,7,8,9,10,11,12)
+monthord[monthord %in% mn] <- md[match(monthord, mn)]
+bank$month<-as.factor(monthord)
+
+#replace day of week abbreviations with numbers
+weekord<-as.character(bank$day_of_week)
+mn<-c('mon','tue','wed','thu','fri','sat','sun')
+md<-c(1,2,3,4,5,6,7)
+weekord[weekord %in% mn] <- md[match(weekord, mn)]
+bank$day_of_week<-as.factor(weekord)
+
+
+head(bank)
+
+
+```
+```{r}
+train<-sample(nrow(bank),0.7*nrow(bank))
+banktrain<-bank[train,]
+banktest<-bank[-train,]
+
+banktrain<-upSample(x=banktrain[,-ncol(banktrain)],y=banktrain$y)
+
+```
+
+
+```{r}
+fullmodel<-glm(Class~.,banktrain,family=binomial)
+stepped<-stepAIC(fullmodel, direction = "both",trace = FALSE)
+summary(stepped)
+```
+
+```{r}
+names(stepped$coefficients)
+```
+
+
+```{r}
+attach(banktrain)
+plot(Class,contact,ylab="Contact")
+plot(Class,age,ylab="Age")
+plot(Class,job,ylab="Job")
+plot(Class,campaign,ylab="Campaign")
+plot(Class,month,ylab="Month")
+plot(Class,poutcome,ylab="Outcome")
+plot(Class,cons.price.idx,ylab="Price Index")
+plot(Class,cons.conf.idx,ylab="Consumer Confidence")
+plot(Class,emp.var.rate,ylab="Employment")
+detach()
+```
+
+```{r}
+
+set.seed(12345)
+
+
+TC <- trainControl(method = "boot", number=50,classProbs=TRUE,summaryFunction = twoClassSummary)
+
+bankLOG <- train(Class~pdays+poutcome+job+loan+contact+campaign+month+cons.price.idx+cons.conf.idx+emp.var.rate, data=banktrain,
+                 method = "glmnet",
+                 metric="Spec",
+                 trControl = TC)
+bankLOGfull <- train(Class~., data=banktrain,
+                 method = "glmnet",
+                 metric="Spec",
+                 trControl = TC)
+
+
+
+
+predlog<-predict(bankLOG,banktest)
+
+predlogfull<-predict(bankLOGfull,banktest)
+
+
+confusionMatrix(banktest$y,predlog)
+
+confusionMatrix(banktest$y,predlogfull)
+
+
+```
+
+
+```{r}
+set.seed(12345)
+
+
+TC <- trainControl(method = "boot", number=50,classProbs=TRUE,summaryFunction = twoClassSummary)
+
+bankrad <- train(Class~., data=banktrain,
+                 method = "svmLinear",
+                 metric="Spec",
+                 trControl = TC)
+bankrad
+
+predrad<-predict(bankrad,banktest)
+
+
+confusionMatrix(banktest$y,predrad)
+```
+
+
+
+```{r}
+
+set.seed(12345)
+
+
+TC <- trainControl(method = "boot", number=50,classProbs=TRUE,summaryFunction = twoClassSummary)
+
+bankrf <- train(Class~., data=banktrain,
+                 method = "rf",
+                 metric="Spec",
+                 trControl = TC)
+bankrf
+
+predrf<-predict(bankrf,banktest)
+
+
+confusionMatrix(banktest$y,predrf)
+```
+
+
+
+## VI - Findings
+## VII - Conclusions
+
+
+
+
+```{r}
+
+```
+
