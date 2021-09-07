@@ -38,7 +38,7 @@ Test several models (logistic regression, random forest, linear SVC) using boots
 
 ## V - Data
 
-```{r}
+```{r readprepare}
 bank<-read.csv('bank-additional.csv',sep=";",stringsAsFactors = T)
 sum(is.na(bank))
 #duration in column 11
@@ -64,7 +64,7 @@ head(bank)
 
 
 ```
-```{r}
+```{r trainsplit}
 train<-sample(nrow(bank),0.7*nrow(bank))
 banktrain<-bank[train,]
 banktest<-bank[-train,]
@@ -74,18 +74,15 @@ banktrain<-upSample(x=banktrain[,-ncol(banktrain)],y=banktrain$y)
 ```
 
 
-```{r}
+```{r steplog}
 fullmodel<-glm(Class~.,banktrain,family=binomial)
 stepped<-stepAIC(fullmodel, direction = "both",trace = FALSE)
 summary(stepped)
 ```
 
-```{r}
-names(stepped$coefficients)
-```
 
 
-```{r}
+```{r plots}
 attach(banktrain)
 plot(Class,contact,ylab="Contact")
 plot(Class,age,ylab="Age")
@@ -122,9 +119,10 @@ predlog<-predict(bankLOG,banktest)
 
 predlogfull<-predict(bankLOGfull,banktest)
 
-
+print("Selected Model")
 confusionMatrix(predlog,banktest$y)
 
+print("Full Model")
 confusionMatrix(predlogfull,banktest$y)
 
 
@@ -173,6 +171,11 @@ confusionMatrix(predrf,banktest$y)
 
 
 ## VI - Findings
+
+Logistic regression identifies a higher percentage of "yes" (subscribing to term deposits) clients, but has a lower overall accuracy than the random forest. This is because the rate of false "yes" predictions is twice as high for the logistic regression model.
+
+The importance of the false positives in choosing the model depends on the cost of each call compared with the average revenue from a successful call. If that ratio is very large, it will be worth it to sacrifice potential successes in order to avoid wasted calls.
+
 ## VII - Conclusions
 
 
