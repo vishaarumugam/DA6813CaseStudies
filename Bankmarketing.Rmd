@@ -30,7 +30,11 @@ Upsampling changes y variable name to Class.
 
 First get an idea of most important variables using stepwise feature selection using AIC
 
-Test several models using the full model and "important" variables (logistic regression, random forest, linear SVC) using bootstrapped cross validation to optimize tuning variables
+The full model doesn't yield more accurate predictions than the step-selected model, so the different models are tested with the limited set of significant predictors.
+
+Test several models (logistic regression, random forest, linear SVC) using bootstrapped cross validation to optimize tuning variables
+
+
 
 ## V - Data
 
