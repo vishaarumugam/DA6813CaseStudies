@@ -85,10 +85,10 @@ names(stepped$coefficients)
 attach(banktrain)
 plot(Class,contact,ylab="Contact")
 plot(Class,age,ylab="Age")
-plot(Class,job,ylab="Job")
+plot(job,Class,xlab="Job")
 plot(Class,campaign,ylab="Campaign")
-plot(Class,month,ylab="Month")
-plot(Class,poutcome,ylab="Outcome")
+plot(month,Class,xlab="Month")
+plot(poutcome,Class,xlab="Outcome")
 plot(Class,cons.price.idx,ylab="Price Index")
 plot(Class,cons.conf.idx,ylab="Consumer Confidence")
 plot(Class,emp.var.rate,ylab="Employment")
@@ -133,7 +133,7 @@ set.seed(12345)
 
 TC <- trainControl(method = "boot", number=50,classProbs=TRUE,summaryFunction = twoClassSummary)
 
-bankrad <- train(Class~., data=banktrain,
+bankrad <- train(Class~pdays+poutcome+job+loan+contact+campaign+month+cons.price.idx+cons.conf.idx+emp.var.rate, data=banktrain,
                  method = "svmLinear",
                  metric="Spec",
                  trControl = TC)
@@ -154,7 +154,7 @@ set.seed(12345)
 
 TC <- trainControl(method = "boot", number=50,classProbs=TRUE,summaryFunction = twoClassSummary)
 
-bankrf <- train(Class~., data=banktrain,
+bankrf <- train(Class~pdays+poutcome+job+loan+contact+campaign+month+cons.price.idx+cons.conf.idx+emp.var.rate, data=banktrain,
                  method = "rf",
                  metric="Spec",
                  trControl = TC)
