@@ -172,7 +172,7 @@ confusionMatrix(predrf,banktest$y)
 
 ## VI - Findings
 
-Logistic regression identifies a higher percentage of "yes" (subscribing to term deposits) clients, but has a lower overall accuracy than the random forest. This is because the rate of false "yes" predictions is twice as high for the logistic regression model.
+Logistic regression identifies a higher percentage of "yes" (subscribing to term deposits) clients, but has a lower overall accuracy than the linear SVM. This is because the rate of false "yes" predictions is twice as high for the logistic regression model. The random forest is less accurate than the SVM and has fewer true positives than the logistic regression or SVM.
 
 The importance of the false positives in choosing the model depends on the cost of each call compared with the average revenue from a successful call. If that ratio is very large, it will be worth it to sacrifice potential successes in order to avoid wasted calls.
 
