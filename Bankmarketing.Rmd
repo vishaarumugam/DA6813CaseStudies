@@ -23,7 +23,9 @@ Ascertaining which factors are most correlated with subscribing to term deposits
 ## IV - Methodology
 
 Read data and check for missing values
-As is outlined in the case, "duration" serves no predictive purpose, because it can only be known after the call is made, and can't be used in the decision for which customer to call, so it is removed.
+As is outlined in the case, "duration" serves no predictive purpose, because it can only be known after the call is made, and can't be used in the decision for which customer to call, so it is removed. Also removed is the pdays variable which lacks sufficient variance to provide meaningful predictive value.
+
+Finally numeric data is normally scaled in order to condense the dimension space for calculating support vectors.
 
 The data also needs to be balanced, because with the unmodified dataset, a classifier could achieve 90% accuracy by predicting a 'no' response for every observation.
 
@@ -105,13 +107,13 @@ plot(Class,emp.var.rate,ylab="Employment")
 detach()
 ```
 
-```{r}
+```{r logreg}
 
 set.seed(12345)
 
 
-#TC <- trainControl(method = "boot", number=50,classProbs=TRUE,summaryFunction = twoClassSummary)
-TC <- trainControl(method="repeatedcv", number=10, repeats=3)
+TC <- trainControl(method = "boot", number=50,classProbs=TRUE,summaryFunction = twoClassSummary)
+#TC <- trainControl(method="repeatedcv", number=10, repeats=3)
 
 bankLOG <- train(Class~previous+contact+campaign+cons.price.idx+cons.conf.idx+emp.var.rate+education+day_of_week, data=banktrain,
                  method = "glmnet",
@@ -138,12 +140,12 @@ confusionMatrix(predlogfull,banktest$y)
 
 ```
 
-```{r}
+```{r dtree}
 
 TC <- trainControl(method = "boot", number=50,classProbs=TRUE,summaryFunction = twoClassSummary)
 #TC <- trainControl(method="repeatedcv", number=10, repeats=3)
 
-banktree=train(Class~.,data=banktrain, metric="ROC",trControl=TC,method='rpart',control = rpart.control(cp=0.06,minsplit = 15, minbucket = 6))
+banktree=train(Class~.,data=banktrain, metric="ROC",trControl=TC,method='rpart',control = rpart.control(cp=0.05,minsplit = 15, minbucket = 6))
 
 rpart.plot(banktree$finalModel)
 
@@ -161,7 +163,7 @@ confusionMatrix(predtree,banktest$y)
 
 
 
-```{r}
+```{r linearSVM}
 set.seed(1)
 
 
@@ -185,7 +187,7 @@ confusionMatrix(predrad,banktest$y)
 
 
 
-```{r}
+```{r randomforest}
 
 set.seed(12345)
 
