@@ -7,7 +7,7 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(caret)
-library(MASS)
+library(rpart.plot)
 setwd("~/GitHub/DA6813CaseStudies")
 ```
 
@@ -62,14 +62,18 @@ bank$day_of_week<-as.factor(weekord)
 #reverse levels so "yes" is returned as the positive class to the caret model
 bank$y <- factor(bank$y, levels=rev(levels(bank$y)))
 
-head(bank)
+#scale data
+params<-preProcess(bank,method=c("scale","nzv"))
+scaledbank<-predict(params,bank)
+
+head(scaledbank)
 
 
 ```
 ```{r trainsplit}
-train<-sample(nrow(bank),0.7*nrow(bank))
-banktrain<-bank[train,]
-banktest<-bank[-train,]
+train<-sample(nrow(scaledbank),0.7*nrow(scaledbank))
+banktrain<-scaledbank[train,]
+banktest<-scaledbank[-train,]
 
 banktrain<-upSample(x=banktrain[,-ncol(banktrain)],y=banktrain$y)
 
@@ -89,6 +93,7 @@ summary(stepped)
 attach(banktrain)
 plot(Class,contact,ylab="Contact")
 plot(Class,age,ylab="Age")
+plot(Class,marital,ylab="Marital Status")
 plot(job,Class,xlab="Job")
 plot(Class,campaign,ylab="Campaign")
 plot(month,Class,xlab="Month")
@@ -104,9 +109,10 @@ detach()
 set.seed(12345)
 
 
-TC <- trainControl(method = "boot", number=50,classProbs=TRUE,summaryFunction = twoClassSummary)
+#TC <- trainControl(method = "boot", number=50,classProbs=TRUE,summaryFunction = twoClassSummary)
+TC <- trainControl(method="repeatedcv", number=10, repeats=3)
 
-bankLOG <- train(Class~pdays+poutcome+job+loan+contact+campaign+month+cons.price.idx+cons.conf.idx+emp.var.rate, data=banktrain,
+bankLOG <- train(Class~previous+contact+campaign+cons.price.idx+cons.conf.idx+emp.var.rate+education+day_of_week, data=banktrain,
                  method = "glmnet",
                  metric="Spec",
                  trControl = TC)
@@ -131,18 +137,43 @@ confusionMatrix(predlogfull,banktest$y)
 
 ```
 
-
 ```{r}
-set.seed(12345)
-
 
 TC <- trainControl(method = "boot", number=50,classProbs=TRUE,summaryFunction = twoClassSummary)
+#TC <- trainControl(method="repeatedcv", number=10, repeats=3)
 
-bankrad <- train(Class~pdays+poutcome+job+loan+contact+campaign+month+cons.price.idx+cons.conf.idx+emp.var.rate, data=banktrain,
+banktree=train(Class~.,data=banktrain, metric="ROC",trControl=TC,method='rpart',control = rpart.control(cp=0.06,minsplit = 15, minbucket = 6))
+
+rpart.plot(banktree$finalModel)
+
+
+#banktree<-rpart(Class~., data=banktrain, method="class", control=rpart.control(minsplit=15, cp=0.01))
+#library(rattle)
+#fancyRpartPlot(banktree)
+
+predtree<-predict(banktree,banktest)
+
+confusionMatrix(predtree,banktest$y)
+
+```
+
+
+
+
+```{r}
+set.seed(1)
+
+
+#TC <- trainControl(method = "boot", number=50,classProbs=TRUE,summaryFunction = twoClassSummary)
+TC <- trainControl(method="repeatedcv", number=10,repeats=3,
+                   classProbs=TRUE,summaryFunction = twoClassSummary)
+
+bankrad <- train(Class~poutcome+job+contact+campaign+month+cons.price.idx+cons.conf.idx+emp.var.rate, data=banktrain,
                  method = "svmLinear",
-                 metric="Spec",
+                 metric="ROC",
                  trControl = TC,
-                 tuneGrid = expand.grid(C = seq(0, 2, length = 20)))
+                 tuneGrid = expand.grid(C = seq(0.5, 3, length = 10)))
+#)
 bankrad
 
 predrad<-predict(bankrad,banktest)
@@ -160,9 +191,10 @@ set.seed(12345)
 
 TC <- trainControl(method = "boot", number=50,classProbs=TRUE,summaryFunction = twoClassSummary)
 
-bankrf <- train(Class~pdays+poutcome+job+loan+contact+campaign+month+cons.price.idx+cons.conf.idx+emp.var.rate, data=banktrain,
+
+bankrf <- train(Class~poutcome+job+loan+contact+campaign+month+cons.price.idx+cons.conf.idx+emp.var.rate+education+day_of_week, data=banktrain,
                  method = "rf",
-                 metric="Spec",
+                 metric="ROC",
                  trControl = TC)
 bankrf
 
@@ -176,9 +208,10 @@ confusionMatrix(predrf,banktest$y)
 
 ## VI - Findings
 
-Logistic regression identifies a higher percentage of "yes" (subscribing to term deposits) clients, but has a lower overall accuracy than the linear SVM. This is because the rate of false "yes" predictions is twice as high for the logistic regression model. The random forest is less accurate than the SVM and has fewer true positives than the logistic regression or SVM.
+Logistic regression identifies a slightly higher percentage of "yes" (subscribing to term deposits) clients, but has a lower overall accuracy than the linear SVM. This is because the rate of false "yes" predictions is twice as high for the logistic regression model. The random forest is less accurate than the SVM and has fewer true positives than the logistic regression or SVM. The method
 
-The importance of the false positives in choosing the model depends on the cost of each call compared with the average revenue from a successful call. If that ratio is very large, it will be worth it to sacrifice potential successes in order to avoid wasted calls.
+The importance of the false positives in choosing the model depends on the cost of each call compared with the average revenue from a successful call. If that ratio is very large, it will be worth it to sacrifice potential successes in order to avoid wasted calls. 
+If each call is very expensive, the decision tree method has the highest accuracy in detecting wasted calls, but it misses more "yes" calls than it accurately predicts.
 
 ## VII - Conclusions
 
