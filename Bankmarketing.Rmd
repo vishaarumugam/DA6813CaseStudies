@@ -32,7 +32,7 @@ First get an idea of most important variables using stepwise feature selection u
 
 The full model doesn't yield more accurate predictions than the step-selected model, so the different models are tested with the limited set of significant predictors.
 
-Test several models (logistic regression, random forest, linear SVC) using bootstrapped cross validation to optimize tuning variables
+Test several models (logistic regression, decision tree, random forest, linear SVC) using bootstrapped cross validation to optimize tuning variables
 
 
 
