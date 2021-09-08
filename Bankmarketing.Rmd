@@ -8,6 +8,7 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 library(caret)
 library(rpart.plot)
+library(MASS)
 setwd("~/GitHub/DA6813CaseStudies")
 ```
 
@@ -62,7 +63,7 @@ bank$day_of_week<-as.factor(weekord)
 #reverse levels so "yes" is returned as the positive class to the caret model
 bank$y <- factor(bank$y, levels=rev(levels(bank$y)))
 
-#scale data
+#scale and remove variables with near-zero variance(which turns out to be pdays)
 params<-preProcess(bank,method=c("scale","nzv"))
 scaledbank<-predict(params,bank)
 
