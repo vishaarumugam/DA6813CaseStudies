@@ -94,13 +94,27 @@ summary(stepped)
 
 ```{r plots}
 attach(banktrain)
+par(mfrow=c(3,1))
+
+plot(month,Class,xlab="Month")
+plot(job,Class,xlab="Job")
+plot(poutcome,Class,xlab="Outcome")
+
+detach()
+
+```
+
+
+```{r plots}
+attach(banktrain)
+par(mfrow=c(2,4))
+
 plot(Class,contact,ylab="Contact")
 plot(Class,age,ylab="Age")
 plot(Class,marital,ylab="Marital Status")
-plot(job,Class,xlab="Job")
+
 plot(Class,campaign,ylab="Campaign")
-plot(month,Class,xlab="Month")
-plot(poutcome,Class,xlab="Outcome")
+
 plot(Class,cons.price.idx,ylab="Price Index")
 plot(Class,cons.conf.idx,ylab="Consumer Confidence")
 plot(Class,emp.var.rate,ylab="Employment")
