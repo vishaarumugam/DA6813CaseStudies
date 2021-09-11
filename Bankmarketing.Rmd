@@ -259,8 +259,9 @@ legend("bottomright",legend=c("Logistic Regression","Random Forest","Linear SVM"
 ```
 
 The decision tree has the added benefit of being clearly understandable when choosing who to call:
-Make the call if the nr.employed<69 or if the emp.var.rate<-0.64
+Make the call if the nr.employed<69 or if the cons.conf.idx< -10
 ```{r}
 rpart.plot(banktree$finalModel)
+summary(banktree)
 ```
 
