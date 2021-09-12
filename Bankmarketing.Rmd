@@ -9,7 +9,8 @@ knitr::opts_chunk$set(echo = TRUE)
 library(caret)
 library(rpart.plot)
 library(MASS)
-setwd("~/GitHub/DA6813CaseStudies")
+#setwd("~/GitHub/DA6813CaseStudies")
+setwd("~/MSDA/Fall 2021/GitHub")
 ```
 
 ## I - Executive Summary
@@ -20,6 +21,14 @@ The task is to analyze the dataset of customers provided by the banking institut
 Ascertaining which factors are most correlated with subscribing to term deposits will allow the bank to save time and money by focusing on clients that are likely to subscribe, and avoiding those that are not.
 
 ## III - Review of Related Literature
+There were few Marketing Analysis happened with this bank marketing data set and based upon the usage of various exploration, prediction techniques and hyper parameter optimization, different analysis came with different conclusion and Recommendation.
+As per the Journal of Visualization and Analysis in bank Direct marketing prediction by Alaa abu-srhan, based on the exploratory data analysis , different oversampling methods such as Synthetic Minority Oversampling technique, Random Over Oversampling Technique, Selective Pre-processing, etc are used to overcome the imbalance in the response variable which in turn increase prediction accuracy from various classification prediction techniques. Following are the classification techniques,(Random forest, support
+vector machine (SVM), neural network (NN), Naive Bayes,and k-nearest neighbor (KNN) classifiers), are used for the analysis and the results are compared on Gmean and accuracy evaluation metrics to identify the best results.As per the conclusion, SVM and Naive Bayes Classifier provides a better accuracy and Gmean values.
+  
+  Similarly in Data Mining- Bank Marketing Data set by "Kinga Włodarczyk", Different classifier Techniques such as KNN, Linear and logistic regression models have created using different dependent variables in order to predict the response by comparing the accuracy.
+  
+  In this analysis we are also going to try different classification techniques such as logistic regression, random forest, support vector machines with different hyper parameters and different predictors and compare the results based on the accuracy in order to identify the appropriate model.  
+
 ## IV - Methodology
 
 Read data and check for missing values
@@ -42,7 +51,6 @@ Test several models (logistic regression, decision tree, random forest, linear S
 ## V - Data
 
 ```{r readprepare}
-set.seed(12345)
 bank<-read.csv('bank-additional.csv',sep=";",stringsAsFactors = T)
 sum(is.na(bank))
 #duration in column 11
@@ -88,40 +96,20 @@ banktrain<-upSample(x=banktrain[,-ncol(banktrain)],y=banktrain$y)
 ```{r steplog}
 fullmodel<-glm(Class~.,banktrain,family=binomial)
 stepped<-stepAIC(fullmodel, direction = "both",trace = FALSE)
-
-idx <- order(coef(summary(stepped))[,4])  
-out <- coef(summary(stepped))[idx,]     
-head(out,15)
-
-
-
+summary(stepped)
 ```
 
 
 
 ```{r plots}
 attach(banktrain)
-par(mfrow=c(3,1))
-
-plot(month,Class,xlab="Month")
-plot(job,Class,xlab="Job")
-plot(poutcome,Class,xlab="Outcome")
-
-detach()
-
-```
-
-
-```{r plots}
-attach(banktrain)
-par(mfrow=c(2,4))
-
 plot(Class,contact,ylab="Contact")
 plot(Class,age,ylab="Age")
 plot(Class,marital,ylab="Marital Status")
-
+plot(job,Class,xlab="Job")
 plot(Class,campaign,ylab="Campaign")
-
+plot(month,Class,xlab="Month")
+plot(poutcome,Class,xlab="Outcome")
 plot(Class,cons.price.idx,ylab="Price Index")
 plot(Class,cons.conf.idx,ylab="Consumer Confidence")
 plot(Class,emp.var.rate,ylab="Employment")
@@ -130,10 +118,11 @@ detach()
 
 ```{r logreg}
 
-
+set.seed(12345)
 
 
 TC <- trainControl(method = "boot", number=50,classProbs=TRUE,summaryFunction = twoClassSummary)
+#TC <- trainControl(method="repeatedcv", number=10, repeats=3)
 
 bankLOG <- train(Class~previous+contact+campaign+cons.price.idx+cons.conf.idx+emp.var.rate+education+day_of_week, data=banktrain,
                  method = "glmnet",
@@ -163,16 +152,19 @@ confusionMatrix(predlogfull,banktest$y)
 ```{r dtree}
 
 TC <- trainControl(method = "boot", number=50,classProbs=TRUE,summaryFunction = twoClassSummary)
-#TC <- trainControl(method="repeatedcv", number=10, repeats=3,classProbs=TRUE)
+#TC <- trainControl(method="repeatedcv", number=10, repeats=3)
+
+banktree=train(Class~.,data=banktrain, metric="ROC",trControl=TC,method='rpart',control = rpart.control(cp=0.05,minsplit = 15, minbucket = 6))
+
+rpart.plot(banktree$finalModel)
 
 
-banktree=train(Class~.,data=banktrain, metric="ROC",trControl=TC,method='rpart',control = rpart.control(cp=0.1,minsplit = 15, minbucket = 6))
-
-
+#banktree<-rpart(Class~., data=banktrain, method="class", control=rpart.control(minsplit=15, cp=0.01))
+#library(rattle)
+#fancyRpartPlot(banktree)
 
 predtree<-predict(banktree,banktest)
 
-print("Decision Tree")
 confusionMatrix(predtree,banktest$y)
 
 ```
@@ -181,9 +173,10 @@ confusionMatrix(predtree,banktest$y)
 
 
 ```{r linearSVM}
+set.seed(1)
 
 
-
+#TC <- trainControl(method = "boot", number=50,classProbs=TRUE,summaryFunction = twoClassSummary)
 TC <- trainControl(method="repeatedcv", number=10,repeats=3,
                    classProbs=TRUE,summaryFunction = twoClassSummary)
 
@@ -197,13 +190,15 @@ bankrad
 
 predrad<-predict(bankrad,banktest)
 
-print("Linear SVM")
+
 confusionMatrix(predrad,banktest$y)
 ```
 
 
 
 ```{r randomforest}
+
+set.seed(12345)
 
 
 TC <- trainControl(method = "boot", number=50,classProbs=TRUE,summaryFunction = twoClassSummary)
@@ -217,7 +212,7 @@ bankrf
 
 predrf<-predict(bankrf,banktest)
 
-print("Random Forest")
+
 confusionMatrix(predrf,banktest$y)
 ```
 
@@ -225,47 +220,17 @@ confusionMatrix(predrf,banktest$y)
 
 ## VI - Findings
 
-Logistic regression identifies a slightly higher percentage of "yes" (subscribing to term deposits) clients, but has a lower overall accuracy than the linear SVM. This is because the rate of false "yes" predictions is twice as high for the logistic regression model. The random forest is less accurate than the SVM and has fewer true positives than the logistic regression or SVM. The model with the highest accuracy of "yes" predictions is actually the decision tree, with a positive prediction rate of 43%
+Logistic regression identifies a slightly higher percentage of "yes" (subscribing to term deposits) clients, but has a lower overall accuracy than the linear SVM. This is because the rate of false "yes" predictions is twice as high for the logistic regression model. The random forest is less accurate than the SVM and has fewer true positives than the logistic regression or SVM. The method
 
+The importance of the false positives in choosing the model depends on the cost of each call compared with the average revenue from a successful call. If that ratio is very large, it will be worth it to sacrifice potential successes in order to avoid wasted calls. 
+If each call is very expensive, the decision tree method has the highest accuracy in detecting wasted calls, but it misses more "yes" calls than it accurately predicts.
 
 ## VII - Conclusions
 
-The decision tree model "leaves money on the table" in that it doesn't predict as many of the customers who will make a term deposit as some of the other models. But the bank is not a doctor trying to catch every possible instance of cancer, instead it is trying to maximize profit. 
 
-The cost to the bank to make one call divided by the average revenue generated by a successful call is the cost-to-revenue ratio. To recoup the cost of making calls, this ratio cannot exceed the success rate of the calls made. From this standpoint, using the decision tree model to choose which customers to call will maximize the profit as long as the cost-to-revenue ratio stays below 0.4
 
-*** I don't know what happened or why it was different, but when I ran the program again last night, the decision tree predictive value went way down so this section doesn't reflect the results anymore. I'm trying to figure out what happened.
-
-The only reason to use either the logistic regression or SVM classifiers would be if there were a motivation to gain as many term deposits as possible, regardless of the cost unsuccessful calls. For example, if there were a minimum number of term deposits necessary to meet some regulatory requirement, the bank would need to prioritize reaching that minimum number at the expense of profitability on those calls.
 
 ```{r}
-lf<-confusionMatrix(predlogfull,banktest$y)$byClass[3]
-rf<-confusionMatrix(predrf,banktest$y)$byClass[3]
-svml<-confusionMatrix(predrad,banktest$y)$byClass[3]
-dt<-confusionMatrix(predtree,banktest$y)$byClass[3]
-#models<-c(lf,rf,svml,dt)
-#colors<-c("darkgreen", "blue","red","green")
 
-plot(x=1,y=1,ylab="Cost-To-Revenue Ratio",xlab="Call Success Rate",xlim=c(0.035,1),ylim=c(0.035,1))
-abline(0,1,lwd = 2, lty = 3)
-#abline(lwd = 2,v = c(lf,rf,svml,dt), col = c("darkgreen", "blue","red","green"))
-#for(i in length(models)){
-#  lines(c(models[i],models[i]),c(models[i],0),lwd = 2,col=colors[i])
-#}
-lines(c(lf,lf),c(lf,0),lwd = 2,col="darkgreen")
-lines(c(rf,rf),c(rf,0),lwd = 2,col="blue")
-lines(c(svml,svml),c(svml,0),lwd = 3,col="red")
-lines(c(dt,dt),c(dt,0),lwd = 2,col="green")
-
-legend("bottomright",legend=c("Logistic Regression","Random Forest","Linear SVM","Decision Tree","Break-even Profitability"),lty=c(1,1,1,1,3),lwd = 2,col = c("darkgreen", "blue","red","green","black"))
 ```
-
-The decision tree has the added benefit of being clearly understandable when choosing who to call:
-Make the call if the nr.employed<69 or if the cons.conf.idx< -10
-```{r}
-rpart.plot(banktree$finalModel)
-summary(banktree)
-```
-
-
 
