@@ -9,7 +9,8 @@ knitr::opts_chunk$set(echo = TRUE)
 library(caret)
 library(rpart.plot)
 library(MASS)
-setwd("~/GitHub/DA6813CaseStudies")
+#setwd("~/GitHub/DA6813CaseStudies")
+setwd("~/MSDA/Fall 2021/GitHub")
 ```
 
 ## I - Executive Summary
