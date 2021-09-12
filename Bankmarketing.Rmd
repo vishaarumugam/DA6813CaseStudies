@@ -20,6 +20,14 @@ The task is to analyze the dataset of customers provided by the banking institut
 Ascertaining which factors are most correlated with subscribing to term deposits will allow the bank to save time and money by focusing on clients that are likely to subscribe, and avoiding those that are not.
 
 ## III - Review of Related Literature
+There were few Marketing Analysis happened with this bank marketing data set and based upon the usage of various exploration, prediction techniques and hyper parameter optimization, different analysis came with different conclusion and Recommendation.
+As per the Journal of Visualization and Analysis in bank Direct marketing prediction by Alaa abu-srhan, based on the exploratory data analysis , different oversampling methods such as Synthetic Minority Oversampling technique, Random Over Oversampling Technique, Selective Pre-processing, etc are used to overcome the imbalance in the response variable which in turn increase prediction accuracy from various classification prediction techniques. Following are the classification techniques,(Random forest, support
+vector machine (SVM), neural network (NN), Naive Bayes,and k-nearest neighbor (KNN) classifiers), are used for the analysis and the results are compared on Gmean and accuracy evaluation metrics to identify the best results.As per the conclusion, SVM and Naive Bayes Classifier provides a better accuracy and Gmean values.
+  
+  Similarly in Data Mining- Bank Marketing Data set by "Kinga Włodarczyk", Different classifier Techniques such as KNN, Linear and logistic regression models have created using different dependent variables in order to predict the response by comparing the accuracy.
+  
+  In this analysis we are also going to try different classification techniques such as logistic regression, random forest, support vector machines with different hyper parameters and different predictors and compare the results based on the accuracy in order to identify the appropriate model.  
+
 ## IV - Methodology
 
 Read data and check for missing values
