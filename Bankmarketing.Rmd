@@ -42,6 +42,7 @@ Test several models (logistic regression, decision tree, random forest, linear S
 ## V - Data
 
 ```{r readprepare}
+set.seed(12345)
 bank<-read.csv('bank-additional.csv',sep=";",stringsAsFactors = T)
 sum(is.na(bank))
 #duration in column 11
@@ -129,7 +130,7 @@ detach()
 
 ```{r logreg}
 
-set.seed(12345)
+
 
 
 TC <- trainControl(method = "boot", number=50,classProbs=TRUE,summaryFunction = twoClassSummary)
@@ -180,7 +181,7 @@ confusionMatrix(predtree,banktest$y)
 
 
 ```{r linearSVM}
-set.seed(1)
+
 
 
 TC <- trainControl(method="repeatedcv", number=10,repeats=3,
@@ -203,8 +204,6 @@ confusionMatrix(predrad,banktest$y)
 
 
 ```{r randomforest}
-
-set.seed(12345)
 
 
 TC <- trainControl(method = "boot", number=50,classProbs=TRUE,summaryFunction = twoClassSummary)
@@ -268,11 +267,5 @@ rpart.plot(banktree$finalModel)
 summary(banktree)
 ```
 
-```{r}
-lf
-rf
-svml
-dt
-```
 
 
