@@ -9,8 +9,8 @@ knitr::opts_chunk$set(echo = TRUE)
 library(caret)
 library(rpart.plot)
 library(MASS)
-#setwd("~/GitHub/DA6813CaseStudies")
-setwd("~/MSDA/Fall 2021/GitHub")
+setwd("~/GitHub/DA6813CaseStudies")
+#setwd("~/MSDA/Fall 2021/GitHub")
 ```
 
 ## I - Executive Summary
@@ -83,13 +83,13 @@ head(scaledbank)
 
 
 ```
+
 ```{r trainsplit}
 train<-sample(nrow(scaledbank),0.7*nrow(scaledbank))
 banktrain<-scaledbank[train,]
 banktest<-scaledbank[-train,]
 
 banktrain<-upSample(x=banktrain[,-ncol(banktrain)],y=banktrain$y)
-
 
 ```
 
@@ -108,7 +108,7 @@ head(out,15)
 
 
 
-```{r plots}
+```{r plots1, echo=FALSE}
 attach(banktrain)
 par(mfrow=c(3,1))
 
@@ -121,7 +121,7 @@ detach()
 ```
 
 
-```{r plots}
+```{r plots2, echo=FALSE}
 attach(banktrain)
 par(mfrow=c(2,4))
 
@@ -160,10 +160,10 @@ predlog<-predict(bankLOG,banktest)
 
 predlogfull<-predict(bankLOGfull,banktest)
 
-print("Selected Model")
+#Selected Model
 confusionMatrix(predlog,banktest$y)
 
-print("Full Model")
+#Full Model
 confusionMatrix(predlogfull,banktest$y)
 
 
@@ -181,7 +181,7 @@ banktree=train(Class~.,data=banktrain, metric="ROC",trControl=TC,method='rpart',
 
 predtree<-predict(banktree,banktest)
 
-print("Decision Tree")
+#Decision Tree
 confusionMatrix(predtree,banktest$y)
 
 ```
@@ -200,13 +200,13 @@ bankrad <- train(Class~poutcome+job+contact+campaign+month+cons.price.idx+cons.c
                  method = "svmLinear",
                  metric="ROC",
                  trControl = TC,
-                 tuneGrid = expand.grid(C = seq(0.5, 3, length = 10)))
-#)
+                 tuneGrid = expand.grid(C = seq(0.01, 2, length = 10)))
+
 bankrad
 
 predrad<-predict(bankrad,banktest)
 
-print("Linear SVM")
+#Linear SVM"
 confusionMatrix(predrad,banktest$y)
 ```
 
@@ -226,7 +226,7 @@ bankrf
 
 predrf<-predict(bankrf,banktest)
 
-print("Random Forest")
+#Random Forest
 confusionMatrix(predrf,banktest$y)
 ```
 
@@ -246,7 +246,7 @@ The cost to the bank to make one call divided by the average revenue generated b
 
 The only reason to use either the logistic regression or SVM classifiers would be if there were a motivation to gain as many term deposits as possible, regardless of the cost unsuccessful calls. For example, if there were a minimum number of term deposits necessary to meet some regulatory requirement, the bank would need to prioritize reaching that minimum number at the expense of profitability on those calls.
 
-```{r}
+```{r echo=FALSE}
 lf<-confusionMatrix(predlogfull,banktest$y)$byClass[3]
 rf<-confusionMatrix(predrf,banktest$y)$byClass[3]
 svml<-confusionMatrix(predrad,banktest$y)$byClass[3]
@@ -270,9 +270,9 @@ legend("bottomright",legend=c("Logistic Regression","Random Forest","Linear SVM"
 
 The decision tree has the added benefit of being clearly understandable when choosing who to call:
 Make the call if the nr.employed<69 or if the cons.conf.idx< -10
-```{r}
+```{r echo=FALSE}
 rpart.plot(banktree$finalModel)
-summary(banktree)
+
 ```
 
 
