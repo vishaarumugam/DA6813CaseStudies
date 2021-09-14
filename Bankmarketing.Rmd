@@ -14,7 +14,99 @@ setwd("~/GitHub/DA6813CaseStudies")
 #setwd("~/MSDA/Fall 2021/GitHub")
 ```
 
-```{r}
+
+```{r readprepare, include=F}
+set.seed(12345)
+bank<-read.csv('bank-additional.csv',sep=";",stringsAsFactors = T)
+sum(is.na(bank))
+#duration in column 11
+bank<-bank[-11]
+
+#replace month abbreviations with numbers
+monthord<-as.character(bank$month)
+mn<-c('jan','feb','mar','apr','may','jun','jul',
+  'aug','sep','oct','nov','dec')
+md<-c(1,2,3,4,5,6,7,8,9,10,11,12)
+monthord[monthord %in% mn] <- md[match(monthord, mn)]
+bank$month<-as.factor(monthord)
+
+#replace day of week abbreviations with numbers
+weekord<-as.character(bank$day_of_week)
+mn<-c('mon','tue','wed','thu','fri','sat','sun')
+md<-c(1,2,3,4,5,6,7)
+weekord[weekord %in% mn] <- md[match(weekord, mn)]
+bank$day_of_week<-as.factor(weekord)
+
+#reverse levels so "yes" is returned as the positive class to the caret model
+bank$y <- factor(bank$y, levels=rev(levels(bank$y)))
+
+
+#scale and remove variables with near-zero variance(which turns out to be pdays)
+
+params<-preProcess(bank,method=c("scale","center","nzv"))
+scaledbank<-predict(params,bank)
+
+#separate the data into train and test sets
+
+train<-sample(nrow(scaledbank),0.7*nrow(scaledbank))
+banktrain<-scaledbank[train,]
+banktest<-scaledbank[-train,]
+
+#balance the target classes so the 
+banktrain<-upSample(x=banktrain[,-ncol(banktrain)],y=banktrain$y)
+
+```
+
+
+```{r models,include=F}
+
+
+TC <- trainControl(method = "boot", number=50,classProbs=TRUE,summaryFunction = twoClassSummary)
+
+
+bankrf <- train(Class~poutcome+job+loan+contact+campaign+month+cons.price.idx+cons.conf.idx+emp.var.rate+education+day_of_week, data=banktrain,
+                 method = "rf",
+                 metric="ROC",
+                 trControl = TC)
+
+predrf<-predict(bankrf,banktest)
+
+
+banktree=train(Class~.,data=banktrain, metric="ROC",trControl=TC,method='rpart',
+               control = rpart.control(cp=0.01, split=c("gini"),minbucket = 15))
+predtree<-predict(banktree,banktest)
+
+
+
+
+bankLOG <- train(Class~previous+contact+campaign+cons.price.idx+cons.conf.idx+emp.var.rate+education+day_of_week, data=banktrain,
+                 method = "glmnet",
+                 metric="ROC",
+                 trControl = TC)
+
+predlog<-predict(bankLOG,banktest)
+
+
+bankLOGfull <- train(Class~., data=banktrain,
+                 method = "glmnet",
+                 metric="ROC",
+                 trControl = TC)
+
+predlogfull<-predict(bankLOGfull,banktest)
+
+
+
+TC <- trainControl(method="repeatedcv", number=10,repeats=3,
+                   classProbs=TRUE,summaryFunction = twoClassSummary)
+
+bankrad <- train(Class~poutcome+job+nr.employed+contact+campaign+month+cons.price.idx+cons.conf.idx+emp.var.rate, data=banktrain,
+                 method = "svmLinear",
+                 metric="ROC",
+                 trControl = TC,
+                 tuneGrid = expand.grid(C = seq(0.01, 2, length = 10)))
+
+
+predrad<-predict(bankrad,banktest)
 
 ```
 
@@ -69,47 +161,6 @@ table(bank$pdays)
 ```
 
 
-```{r readprepare, include=F}
-set.seed(12345)
-bank<-read.csv('bank-additional.csv',sep=";",stringsAsFactors = T)
-sum(is.na(bank))
-#duration in column 11
-bank<-bank[-11]
-
-#replace month abbreviations with numbers
-monthord<-as.character(bank$month)
-mn<-c('jan','feb','mar','apr','may','jun','jul',
-  'aug','sep','oct','nov','dec')
-md<-c(1,2,3,4,5,6,7,8,9,10,11,12)
-monthord[monthord %in% mn] <- md[match(monthord, mn)]
-bank$month<-as.factor(monthord)
-
-#replace day of week abbreviations with numbers
-weekord<-as.character(bank$day_of_week)
-mn<-c('mon','tue','wed','thu','fri','sat','sun')
-md<-c(1,2,3,4,5,6,7)
-weekord[weekord %in% mn] <- md[match(weekord, mn)]
-bank$day_of_week<-as.factor(weekord)
-
-#reverse levels so "yes" is returned as the positive class to the caret model
-bank$y <- factor(bank$y, levels=rev(levels(bank$y)))
-
-
-#scale and remove variables with near-zero variance(which turns out to be pdays)
-
-params<-preProcess(bank,method=c("scale","center","nzv"))
-scaledbank<-predict(params,bank)
-
-#separate the data into train and test sets
-
-train<-sample(nrow(scaledbank),0.7*nrow(scaledbank))
-banktrain<-scaledbank[train,]
-banktest<-scaledbank[-train,]
-
-#balance the target classes so the 
-banktrain<-upSample(x=banktrain[,-ncol(banktrain)],y=banktrain$y)
-
-```
 
 
 After the data is preprocessed, we examine the predictors that have the highest significance in a full logistic regression model.
@@ -176,57 +227,6 @@ We can see that, perhaps surprisingly, the apparently strongest difference in me
 
 We can also see that excluding the variables with less predictive power does little to change the overall accuracy of the model, so for the purposes of computational efficiency the subset of significant variables is used in the Random Forest and SVM models, but the full model is used for the Logistic Regression and Decision Tree models.
 
-```{r models,include=F}
-
-
-TC <- trainControl(method = "boot", number=50,classProbs=TRUE,summaryFunction = twoClassSummary)
-
-
-bankrf <- train(Class~poutcome+job+loan+contact+campaign+month+cons.price.idx+cons.conf.idx+emp.var.rate+education+day_of_week, data=banktrain,
-                 method = "rf",
-                 metric="ROC",
-                 trControl = TC)
-
-predrf<-predict(bankrf,banktest)
-
-
-banktree=train(Class~.,data=banktrain, metric="ROC",trControl=TC,method='rpart',
-               control = rpart.control(cp=0.01, split=c("gini"),minbucket = 15))
-predtree<-predict(banktree,banktest)
-
-
-
-
-bankLOG <- train(Class~previous+contact+campaign+cons.price.idx+cons.conf.idx+emp.var.rate+education+day_of_week, data=banktrain,
-                 method = "glmnet",
-                 metric="ROC",
-                 trControl = TC)
-
-predlog<-predict(bankLOG,banktest)
-
-
-bankLOGfull <- train(Class~., data=banktrain,
-                 method = "glmnet",
-                 metric="ROC",
-                 trControl = TC)
-
-predlogfull<-predict(bankLOGfull,banktest)
-
-
-
-TC <- trainControl(method="repeatedcv", number=10,repeats=3,
-                   classProbs=TRUE,summaryFunction = twoClassSummary)
-
-bankrad <- train(Class~poutcome+job+nr.employed+contact+campaign+month+cons.price.idx+cons.conf.idx+emp.var.rate, data=banktrain,
-                 method = "svmLinear",
-                 metric="ROC",
-                 trControl = TC,
-                 tuneGrid = expand.grid(C = seq(0.01, 2, length = 10)))
-
-
-predrad<-predict(bankrad,banktest)
-
-```
 
 
 
