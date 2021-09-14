@@ -9,16 +9,28 @@ knitr::opts_chunk$set(echo = TRUE)
 library(caret)
 library(rpart.plot)
 library(MASS)
+library(fastDummies)
 setwd("~/GitHub/DA6813CaseStudies")
 #setwd("~/MSDA/Fall 2021/GitHub")
 ```
 
+```{r}
+
+```
+
+
 ## I - Executive Summary
 ## II - The Problem
 
-The task is to analyze the dataset of customers provided by the banking institution, and determine what combination of personal characteristics and external factors are associated with the highest likelihood of the client subscribing to a term deposit. 
+The task is to analyze the data set of customers provided by the banking institution, and determine what combination of personal characteristics and external factors are associated with the highest likelihood calling a client who will subscribe to a term deposit.
+
+The observations in the data set represent calls made to potential and existing clients of the bank, and the attributes describe the personal characteristics of the clients themselves(age, marital status, etc), the marketing behavior of the bank(e.g. number of contacts made by bank, time of year), as well as the economic climate at the time of the call(e.g. consumer confidence index).
+
+Most importantly, these calls have an indicating variable for whether or not the call resulted in the client subscribing to a term deposit, which is ultimately the reason the bank is making the calls.
 
 Ascertaining which factors are most correlated with subscribing to term deposits will allow the bank to save time and money by focusing on clients that are likely to subscribe, and avoiding those that are not.
+
+The following sections will describe in greater detail the nature of the data set and related literature as well as the methodology used to produce the predictive model with the most utility for the bank. 
 
 ## III - Review of Related Literature
 There were few Marketing Analysis happened with this bank marketing data set and based upon the usage of various exploration, prediction techniques and hyper parameter optimization, different analysis came with different conclusion and Recommendation.
@@ -31,26 +43,33 @@ vector machine (SVM), neural network (NN), Naive Bayes,and k-nearest neighbor (K
 
 ## IV - Methodology
 
-Read data and check for missing values
-As is outlined in the case, "duration" serves no predictive purpose, because it can only be known after the call is made, and can't be used in the decision for which customer to call, so it is removed. Also removed is the pdays variable which lacks sufficient variance to provide meaningful predictive value.
+We will test four types of classifier and compare the results to determine which will best serve to predict a successful call. These models are as follows: Logistic Regression, Random Forest, Decision Tree, and Linear Support Vector Machine.
 
-Finally numeric data is normally scaled in order to condense the dimension space for calculating support vectors.
+Prior to the training process for any of the models the variables are selected and modified for more efficient computation and accurate results. Variables that lack predictive value are removed, and numeric data describing unrelated phenomena are scaled to condense the dimensional space for the calculations.
 
-The data also needs to be balanced, because with the unmodified dataset, a classifier could achieve 90% accuracy by predicting a 'no' response for every observation.
+The data then needs to be balanced for the target class, because with the unmodified data set a classifier could achieve 90% accuracy by predicting a 'no' response for every observation. A balanced training set is created by resampling the "yes" observations to match the quantity of "no" observations. However, after the classifier is trained, it will be tested on the unbalanced test set in order to determine how the classifier would perform under real conditions.
 
-Upsampling changes y variable name to Class.
+The entire reason the bank is calling people is in the hope of finding potential customers, so a model that only predicts "no" is useless even if it may be very accurate.
 
-First get an idea of most important variables using stepwise feature selection using AIC
 
-The full model doesn't yield more accurate predictions than the step-selected model, so the different models are tested with the limited set of significant predictors.
+After the data is prepared and divided into a balanced training set and unbalanced test set, important variables are determined first by performing stepwise selection using AIC for a logistic regression using a full model.
 
-Test several models (logistic regression, decision tree, random forest, linear SVC) using bootstrapped cross validation to optimize tuning variables
+The full model doesn't yield more accurate predictions than the step-selected model, so the remaining models are tested with the limited set of significant predictors.
 
+-----background on classifiers
 
 
 ## V - Data
 
-```{r readprepare}
+The data set to be used is a representative sample of the larger banking data set called 'bank-additional.csv', with additional being a reference to the quarterly economic indicators that are included in addition to the banking client data.
+
+As is outlined in the data dictionary, "duration" serves no predictive purpose, because it can only be known after the call is made, and can't be used in the decision for which customer to call, so it is removed. Also removed is the pdays variable which represents the number of days that have passed since the client was last called. This variable lacks sufficient variance to provide meaningful predictive value because the dummy value of 999 given to signify a call to a new customer is so numerous and so far from the real values.
+```{r}
+table(bank$pdays)
+```
+
+
+```{r readprepare, include=F}
 set.seed(12345)
 bank<-read.csv('bank-additional.csv',sep=";",stringsAsFactors = T)
 sum(is.na(bank))
@@ -75,27 +94,31 @@ bank$day_of_week<-as.factor(weekord)
 #reverse levels so "yes" is returned as the positive class to the caret model
 bank$y <- factor(bank$y, levels=rev(levels(bank$y)))
 
+
 #scale and remove variables with near-zero variance(which turns out to be pdays)
-params<-preProcess(bank,method=c("scale","nzv"))
+
+params<-preProcess(bank,method=c("scale","center","nzv"))
 scaledbank<-predict(params,bank)
 
-head(scaledbank)
+#separate the data into train and test sets
 
-
-```
-
-```{r trainsplit}
 train<-sample(nrow(scaledbank),0.7*nrow(scaledbank))
 banktrain<-scaledbank[train,]
 banktest<-scaledbank[-train,]
 
+#balance the target classes so the 
 banktrain<-upSample(x=banktrain[,-ncol(banktrain)],y=banktrain$y)
 
 ```
 
 
-```{r steplog}
+After the data is preprocessed, we examine the predictors that have the highest significance in a full logistic regression model.
+
+
+
+```{r steplog, echo=F}
 fullmodel<-glm(Class~.,banktrain,family=binomial)
+
 stepped<-stepAIC(fullmodel, direction = "both",trace = FALSE)
 
 idx <- order(coef(summary(stepped))[,4])  
@@ -108,88 +131,276 @@ head(out,15)
 
 
 
+```{r,echo=false}
+imp <- as.data.frame(varImp(fullmodel))
+imp <- data.frame(Importance = imp$Overall,
+           Variable_Name   = rownames(imp))
+head(imp[order(imp$Importance,decreasing = T),],10)
+```
+
+The most important variables in the full logistic regression model are the same as the variables with the lowest p-values when using stepwise predictor selection, which makes sense.
+
+Next we will examine the distribution of the "yes" and "no" class across these significant variables.
+
 ```{r plots1, echo=FALSE}
-attach(banktrain)
+
 par(mfrow=c(3,1))
 
-plot(month,Class,xlab="Month")
-plot(job,Class,xlab="Job")
-plot(poutcome,Class,xlab="Outcome")
+plot(banktrain$month,banktrain$Class,xlab="Month")
+plot(banktrain$job,banktrain$Class,xlab="Job")
+plot(banktrain$poutcome,banktrain$Class,xlab="Outcome")
 
-detach()
+
 
 ```
 
 
 ```{r plots2, echo=FALSE}
-attach(banktrain)
+
 par(mfrow=c(2,4))
 
-plot(Class,contact,ylab="Contact")
-plot(Class,age,ylab="Age")
-plot(Class,marital,ylab="Marital Status")
+plot(bank$y,bank$contact,ylab="Contact")
+plot(bank$y,bank$age,ylab="Age")
+plot(bank$y,bank$marital,ylab="Marital Status")
 
-plot(Class,campaign,ylab="Campaign")
+plot(bank$y,bank$campaign,ylab="Campaign")
 
-plot(Class,cons.price.idx,ylab="Price Index")
-plot(Class,cons.conf.idx,ylab="Consumer Confidence")
-plot(Class,emp.var.rate,ylab="Employment")
-detach()
+plot(bank$y,bank$cons.price.idx,ylab="Price Index")
+plot(bank$y,bank$cons.conf.idx,ylab="Consumer Confidence")
+plot(bank$y,bank$nr.employed,ylab="Number of Employees")
+plot(bank$y,bank$emp.var.rate,ylab="Employment Variation Rate")
+
 ```
 
-```{r logreg}
+We can see that, perhaps surprisingly, the apparently strongest difference in means are in the aggregate economic indicators rather than the most of the individual personal data.
 
+We can also see that excluding the variables with less predictive power does little to change the overall accuracy of the model, so for the purposes of computational efficiency the subset of significant variables is used in the Random Forest and SVM models, but the full model is used for the Logistic Regression and Decision Tree models.
 
+```{r models,include=F}
 
 
 TC <- trainControl(method = "boot", number=50,classProbs=TRUE,summaryFunction = twoClassSummary)
+
+
+bankrf <- train(Class~poutcome+job+loan+contact+campaign+month+cons.price.idx+cons.conf.idx+emp.var.rate+education+day_of_week, data=banktrain,
+                 method = "rf",
+                 metric="ROC",
+                 trControl = TC)
+
+predrf<-predict(bankrf,banktest)
+
+
+banktree=train(Class~.,data=banktrain, metric="ROC",trControl=TC,method='rpart',
+               control = rpart.control(cp=0.01, split=c("gini"),minbucket = 15))
+predtree<-predict(banktree,banktest)
+
+
+
 
 bankLOG <- train(Class~previous+contact+campaign+cons.price.idx+cons.conf.idx+emp.var.rate+education+day_of_week, data=banktrain,
                  method = "glmnet",
-                 metric="Spec",
+                 metric="ROC",
                  trControl = TC)
-bankLOGfull <- train(Class~., data=banktrain,
-                 method = "glmnet",
-                 metric="Spec",
-                 trControl = TC)
-
-
-
 
 predlog<-predict(bankLOG,banktest)
 
+
+bankLOGfull <- train(Class~., data=banktrain,
+                 method = "glmnet",
+                 metric="ROC",
+                 trControl = TC)
+
 predlogfull<-predict(bankLOGfull,banktest)
 
-#Selected Model
-confusionMatrix(predlog,banktest$y)
 
-#Full Model
-confusionMatrix(predlogfull,banktest$y)
 
+TC <- trainControl(method="repeatedcv", number=10,repeats=3,
+                   classProbs=TRUE,summaryFunction = twoClassSummary)
+
+bankrad <- train(Class~poutcome+job+nr.employed+contact+campaign+month+cons.price.idx+cons.conf.idx+emp.var.rate, data=banktrain,
+                 method = "svmLinear",
+                 metric="ROC",
+                 trControl = TC,
+                 tuneGrid = expand.grid(C = seq(0.01, 2, length = 10)))
+
+
+predrad<-predict(bankrad,banktest)
 
 ```
 
-```{r dtree}
+
+
+## VI - Findings
+
+The confusion matrices and accuracy statistics from the models are listed below:
+
+```{r echo=F}
+predictions<-list(predlog,predlogfull,predrf,predtree,predrad)
+labelcf<-c("Selected Logistic Regression","Full Model Logistic Regression","Random Forest","Decision Tree","Linear SVM")
+
+for(i in 1:5){
+  print(labelcf[i])
+  print(confusionMatrix(unlist(predictions[i]),banktest$y)$table)
+  print(confusionMatrix(unlist(predictions[i]),banktest$y)$byClass[c(3,11)])
+}
+
+```
+
+Logistic regression identifies a slightly higher percentage of "yes" (subscribing to term deposits) clients, but has a lower overall accuracy than the linear SVM. This is because the rate of false "yes" predictions is higher for the logistic regression model. The random forest is less accurate than the SVM and has fewer true positives than the logistic regression or SVM. The model with the highest accuracy of "yes" predictions is actually the decision tree.
+
+
+## VII - Conclusions
+
+The decision tree model "leaves money on the table" in that it doesn't predict as many of the customers who will make a term deposit as some of the other models. But the bank is not a doctor trying to catch every possible instance of cancer, instead it is trying to maximize profit. 
+
+The cost to the bank to make one call divided by the average revenue generated by a successful call is the cost-to-revenue ratio. To recoup the cost of making calls, this ratio cannot exceed the success rate of the calls made. From this standpoint, using the decision tree model to choose which customers to call will maximize the profit as long as the cost-to-revenue ratio stays below 0.33
+
+
+The only reason to use either the logistic regression or SVM classifiers would be if there were a motivation to gain as many term deposits as possible, regardless of the cost unsuccessful calls. For example, if there were a minimum number of term deposits necessary to meet some regulatory requirement, the bank would need to prioritize reaching that minimum number at the expense of profitability on those calls.
+
+
+
+
+
+
+
+```{r echo=FALSE}
+lf<-confusionMatrix(predlogfull,banktest$y)$byClass[3]
+rf<-confusionMatrix(predrf,banktest$y)$byClass[3]
+svml<-confusionMatrix(predrad,banktest$y)$byClass[3]
+dt<-confusionMatrix(predtree,banktest$y)$byClass[3]
+
+plot(x=1,y=1,ylab="Cost-To-Revenue Ratio",xlab="Call Success Rate",xlim=c(0.035,1),ylim=c(0.035,1))
+abline(0,1,lwd = 2, lty = 3)
+
+lines(c(lf,lf),c(lf,0),lwd = 2,col="darkgreen")
+lines(c(rf,rf),c(rf,0),lwd = 2,col="blue")
+lines(c(svml,svml),c(svml,0),lwd = 2,col="red")
+lines(c(dt,dt),c(dt,0),lwd = 2,col="green")
+
+legend("bottomright",legend=c("Logistic Regression","Random Forest","Linear SVM","Decision Tree","Break-even Profitability"),lty=c(1,1,1,1,3),lwd = 2,col = c("darkgreen", "blue","red","green","black"))
+```
+
+The decision tree has the added benefit of being clearly understandable when choosing who to call:
+Make the call if the nr.employed<69 or if the cons.conf.idx< -10
+
+
+```{r echo=FALSE}
+rpart.plot(banktree$finalModel)
+
+```
+
+
+```{r}
+
+```
+
+## Appendix
+
+### Preprocessing the data
+
+```{r  eval=F,echo=T}
+set.seed(12345)
+bank<-read.csv('bank-additional.csv',sep=";",stringsAsFactors = T)
+sum(is.na(bank))
+#duration in column 11
+bank<-bank[-11]
+
+#replace month abbreviations with numbers
+monthord<-as.character(bank$month)
+mn<-c('jan','feb','mar','apr','may','jun','jul',
+  'aug','sep','oct','nov','dec')
+md<-c(1,2,3,4,5,6,7,8,9,10,11,12)
+monthord[monthord %in% mn] <- md[match(monthord, mn)]
+bank$month<-as.factor(monthord)
+
+#replace day of week abbreviations with numbers
+weekord<-as.character(bank$day_of_week)
+mn<-c('mon','tue','wed','thu','fri','sat','sun')
+md<-c(1,2,3,4,5,6,7)
+weekord[weekord %in% mn] <- md[match(weekord, mn)]
+bank$day_of_week<-as.factor(weekord)
+
+#reverse levels so "yes" is returned as the positive class to the caret model
+bank$y <- factor(bank$y, levels=rev(levels(bank$y)))
+
+
+#scale and remove variables with near-zero variance(which turns out to be pdays)
+
+params<-preProcess(bank,method=c("scale","center","nzv"))
+scaledbank<-predict(params,bank)
+
+#separate the data into train and test sets
+
+train<-sample(nrow(scaledbank),0.7*nrow(scaledbank))
+banktrain<-scaledbank[train,]
+banktest<-scaledbank[-train,]
+
+#balance the target classes so the 
+banktrain<-upSample(x=banktrain[,-ncol(banktrain)],y=banktrain$y)
+
+```
+
+
+
+
+
+### Determining most significant variables
+```{r eval=F,echo=T}
+##train logistic regressino and select variables by significance
+fullmodel<-glm(Class~.,banktrain,family=binomial)
+
+stepped<-stepAIC(fullmodel, direction = "both",trace = FALSE)
+
+idx <- order(coef(summary(stepped))[,4])  
+out <- coef(summary(stepped))[idx,]     
+head(out,15)
+
+###importance
+imp <- as.data.frame(varImp(fullmodel))
+imp <- data.frame(Importance = imp$Overall,
+           Variable_Name   = rownames(imp))
+head(imp[order(imp$Importance,decreasing = T),],10)
+
+```
+
+### Training different models
+
+```{r,eval=F,echo=T}
+
 
 TC <- trainControl(method = "boot", number=50,classProbs=TRUE,summaryFunction = twoClassSummary)
-#TC <- trainControl(method="repeatedcv", number=10, repeats=3,classProbs=TRUE)
 
 
-banktree=train(Class~.,data=banktrain, metric="ROC",trControl=TC,method='rpart',control = rpart.control(cp=0.1,minsplit = 15, minbucket = 6))
+bankrf <- train(Class~poutcome+job+loan+contact+campaign+month+cons.price.idx+cons.conf.idx+emp.var.rate+education+day_of_week, data=banktrain,
+                 method = "rf",
+                 metric="ROC",
+                 trControl = TC)
+
+predrf<-predict(bankrf,banktest)
 
 
-
+banktree=train(Class~.,data=banktrain, metric="ROC",trControl=TC,method='rpart',
+               control = rpart.control(cp=0.01, split=c("gini"),minbucket = 15))
 predtree<-predict(banktree,banktest)
 
-#Decision Tree
-confusionMatrix(predtree,banktest$y)
-
-```
 
 
 
+bankLOG <- train(Class~previous+contact+campaign+cons.price.idx+cons.conf.idx+emp.var.rate+education+day_of_week, data=banktrain,
+                 method = "glmnet",
+                 metric="ROC",
+                 trControl = TC)
 
-```{r linearSVM}
+predlog<-predict(bankLOG,banktest)
+
+
+bankLOGfull <- train(Class~., data=banktrain,
+                 method = "glmnet",
+                 metric="ROC",
+                 trControl = TC)
+
+predlogfull<-predict(bankLOGfull,banktest)
 
 
 
@@ -202,78 +413,18 @@ bankrad <- train(Class~poutcome+job+contact+campaign+month+cons.price.idx+cons.c
                  trControl = TC,
                  tuneGrid = expand.grid(C = seq(0.01, 2, length = 10)))
 
-bankrad
 
 predrad<-predict(bankrad,banktest)
 
-#Linear SVM"
-confusionMatrix(predrad,banktest$y)
 ```
 
 
-
-```{r randomforest}
-
-
-TC <- trainControl(method = "boot", number=50,classProbs=TRUE,summaryFunction = twoClassSummary)
-
-
-bankrf <- train(Class~poutcome+job+loan+contact+campaign+month+cons.price.idx+cons.conf.idx+emp.var.rate+education+day_of_week, data=banktrain,
-                 method = "rf",
-                 metric="ROC",
-                 trControl = TC)
+### Model output
+```{r}
+predlogfull
+banktree
 bankrf
-
-predrf<-predict(bankrf,banktest)
-
-#Random Forest
-confusionMatrix(predrf,banktest$y)
-```
-
-
-
-## VI - Findings
-
-Logistic regression identifies a slightly higher percentage of "yes" (subscribing to term deposits) clients, but has a lower overall accuracy than the linear SVM. This is because the rate of false "yes" predictions is twice as high for the logistic regression model. The random forest is less accurate than the SVM and has fewer true positives than the logistic regression or SVM. The model with the highest accuracy of "yes" predictions is actually the decision tree, with a positive prediction rate of 43%
-
-
-## VII - Conclusions
-
-The decision tree model "leaves money on the table" in that it doesn't predict as many of the customers who will make a term deposit as some of the other models. But the bank is not a doctor trying to catch every possible instance of cancer, instead it is trying to maximize profit. 
-
-The cost to the bank to make one call divided by the average revenue generated by a successful call is the cost-to-revenue ratio. To recoup the cost of making calls, this ratio cannot exceed the success rate of the calls made. From this standpoint, using the decision tree model to choose which customers to call will maximize the profit as long as the cost-to-revenue ratio stays below 0.4
-
-
-The only reason to use either the logistic regression or SVM classifiers would be if there were a motivation to gain as many term deposits as possible, regardless of the cost unsuccessful calls. For example, if there were a minimum number of term deposits necessary to meet some regulatory requirement, the bank would need to prioritize reaching that minimum number at the expense of profitability on those calls.
-
-```{r echo=FALSE}
-lf<-confusionMatrix(predlogfull,banktest$y)$byClass[3]
-rf<-confusionMatrix(predrf,banktest$y)$byClass[3]
-svml<-confusionMatrix(predrad,banktest$y)$byClass[3]
-dt<-confusionMatrix(predtree,banktest$y)$byClass[3]
-#models<-c(lf,rf,svml,dt)
-#colors<-c("darkgreen", "blue","red","green")
-
-plot(x=1,y=1,ylab="Cost-To-Revenue Ratio",xlab="Call Success Rate",xlim=c(0.035,1),ylim=c(0.035,1))
-abline(0,1,lwd = 2, lty = 3)
-#abline(lwd = 2,v = c(lf,rf,svml,dt), col = c("darkgreen", "blue","red","green"))
-#for(i in length(models)){
-#  lines(c(models[i],models[i]),c(models[i],0),lwd = 2,col=colors[i])
-#}
-lines(c(lf,lf),c(lf,0),lwd = 2,col="darkgreen")
-lines(c(rf,rf),c(rf,0),lwd = 2,col="blue")
-lines(c(svml,svml),c(svml,0),lwd = 3,col="red")
-lines(c(dt,dt),c(dt,0),lwd = 2,col="green")
-
-legend("bottomright",legend=c("Logistic Regression","Random Forest","Linear SVM","Decision Tree","Break-even Profitability"),lty=c(1,1,1,1,3),lwd = 2,col = c("darkgreen", "blue","red","green","black"))
-```
-
-The decision tree has the added benefit of being clearly understandable when choosing who to call:
-Make the call if the nr.employed<69 or if the cons.conf.idx< -10
-```{r echo=FALSE}
-rpart.plot(banktree$finalModel)
+bankrad
 
 ```
-
-
 
