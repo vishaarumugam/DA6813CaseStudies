@@ -182,7 +182,7 @@ head(out,15)
 
 
 
-```{r,echo=false}
+```{r importance, echo=F}
 imp <- as.data.frame(varImp(fullmodel))
 imp <- data.frame(Importance = imp$Overall,
            Variable_Name   = rownames(imp))
