@@ -10,8 +10,12 @@ library(caret)
 library(rpart.plot)
 library(MASS)
 library(fastDummies)
-setwd("~/GitHub/DA6813CaseStudies")
+library(car)
+library(dplyr)
+library(lsr)
+#setwd("~/GitHub/DA6813CaseStudies")
 #setwd("~/MSDA/Fall 2021/GitHub")
+setwd("~/MSDA/Fall 2021/GitHub/DA6813CaseStudies")
 ```
 
 
@@ -108,6 +112,14 @@ bankrad <- train(Class~poutcome+job+nr.employed+contact+campaign+month+cons.pric
 
 predrad<-predict(bankrad,banktest)
 
+
+```
+
+```{r models,include=F}
+# Lda Method
+banklda = train(Class~age+job+education+marital+month+day_of_week+previous+contact+campaign+cons.price.idx+cons.conf.idx+poutcome, data=banktrain,method = "lda",metric='ROC',trControl = trainControl(method = "cv",classProbs=TRUE))
+summary(banklda)
+predlda<-predict(banklda,banktest)
 ```
 
 
@@ -191,6 +203,24 @@ head(imp[order(imp$Importance,decreasing = T),],10)
 
 The most important variables in the full logistic regression model are the same as the variables with the lowest p-values when using stepwise predictor selection, which makes sense.
 
+```{r importance, echo=F}
+correlate(scaledbank)
+```
+
+As per the above correlation matrix there exist a severe correlation between employment varaiation rate,and consumer price index, euribor3m and number of employees for the campaign,so if we remove the above varaibles from the model prediction we can avoid the col-linearity issue
+
+```{r importance, echo=F}
+stepVIF(glm(y~age+campaign+previous+poutcome+cons.conf.idx+cons.price.idx+euribor3m,scaledbank,family = 'binomial'))
+```
+
+### Variation inflation factor
+```{r importance, echo=F}
+vif(glm(y~age+campaign+previous+poutcome+cons.conf.idx+cons.price.idx+euribor3m+emp.var.rate+nr.employed,scaledbank,family=binomial))
+```
+
+Based on VIF value the euribor3m,emp.var.rate and nr.employed has the high VIF value . If we include these predictors in the model it will lead to col-linearity issue.
+
+
 Next we will examine the distribution of the "yes" and "no" class across these significant variables.
 
 ```{r plots1, echo=FALSE}
@@ -235,10 +265,10 @@ We can also see that excluding the variables with less predictive power does lit
 The confusion matrices and accuracy statistics from the models are listed below:
 
 ```{r echo=F}
-predictions<-list(predlog,predlogfull,predrf,predtree,predrad)
-labelcf<-c("Selected Logistic Regression","Full Model Logistic Regression","Random Forest","Decision Tree","Linear SVM")
+predictions<-list(predlog,predlogfull,predrf,predtree,predrad,predlda)
+labelcf<-c("Selected Logistic Regression","Full Model Logistic Regression","Random Forest","Decision Tree","Linear SVM","Linear Discriminant Analysis")
 
-for(i in 1:5){
+for(i in 1:6){
   print(labelcf[i])
   print(confusionMatrix(unlist(predictions[i]),banktest$y)$table)
   print(confusionMatrix(unlist(predictions[i]),banktest$y)$byClass[c(3,11)])
@@ -363,6 +393,21 @@ imp <- data.frame(Importance = imp$Overall,
 head(imp[order(imp$Importance,decreasing = T),],10)
 
 ```
+
+```{r eval=F,echo=T}
+correlate(scaledbank)
+```
+
+```{r eval=F,echo=T}
+stepVIF(glm(y~age+campaign+previous+poutcome+cons.conf.idx+cons.price.idx+euribor3m,scaledbank,family = 'binomial'))
+```
+
+**Variation inflation factor**
+```{r eval=F,echo=T}
+vif(glm(y~age+campaign+previous+poutcome+cons.conf.idx+cons.price.idx+euribor3m+emp.var.rate+nr.employed,scaledbank,family=binomial))
+```
+
+Based on VIF value the euribor3m,emp.var.rate and nr.employed has the high VIF value . If we include these predictors in the model it will lead to col-linearity issue.
 
 ### Training different models
 
