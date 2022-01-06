@@ -1,0 +1,413 @@
+---
+title: "Customer Acquisition and Retention"
+author: "Michael Grogan, Visha, Yogi"
+date: "11/14/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(SMCRM) # CRM data
+library(dplyr) # data wrangling
+library(tidyr) # data wrangling
+library(ggplot2) # plotting
+library(survival) # survival
+library(rpart) # DT
+library(randomForestSRC) # RF
+
+data(acquisitionRetention)
+AR<-acquisitionRetention
+set.seed(123)
+
+```
+
+
+Tasks:
+• Use acquisitionRetention data set to predict which customers will be
+acquired and for how long (duration) based on a feature set using a random
+forest.
+• Compute variable importance to detect interactions and optimize hyperparameters
+for acquired customers.
+• Compare the accuracy of model with a decision trees and logistic regression
+model for acquiring customers.
+o Extra credit: generate PDP plots for all variables
+
+```{r}
+View(customerChurn)
+```
+
+
+
+```{r}
+dt.duration <- rpart(duration~.,data = AR)
+dt.acquisition <- rpart(acquisition~acq_exp+acq_exp_sq+industry+revenue+employees,data = AR)
+
+rattle::fancyRpartPlot(dt.duration, sub = "")
+rattle::fancyRpartPlot(dt.acquisition, sub = "")
+```
+
+```{r}
+forest_acq <- rfsrc(acquisition~acq_exp+acq_exp_sq+
+                      industry+revenue+employees,data = AR, 
+                            importance = TRUE, 
+                            ntree = 1000)
+
+forest_dur <- rfsrc(duration~.,data = AR, 
+                            importance = TRUE, 
+                            ntree = 1000)
+
+forest_acq
+```
+
+
+```{r}
+forest_dur
+```
+
+```{r}
+data.frame(importance = forest_acq$importance) %>%
+  tibble::rownames_to_column(var = "variable") %>%
+  ggplot(aes(x = reorder(variable,importance), y = importance)) +
+    geom_bar(stat = "identity", fill = "violet", color = "black")+
+    coord_flip() +
+     labs(x = "Variables", y = "Variable importance")
+```
+
+
+
+
+```{r}
+mindepth <- max.subtree(forest_acq,
+                        sub.order = TRUE)
+
+# first order depths
+print(round(mindepth$order, 3)[,1])
+
+# vizualise MD
+data.frame(md = round(mindepth$order, 3)[,1]) %>%
+  tibble::rownames_to_column(var = "variable") %>%
+  ggplot(aes(x = reorder(variable,desc(md)), y = md)) +
+    geom_bar(stat = "identity", fill = "orange", color = "black", width = 0.2)+
+    coord_flip() +
+     labs(x = "Variables", y = "Minimal Depth")
+
+# interactions
+mindepth$sub.order
+
+as.matrix(mindepth$sub.order) %>%
+  reshape2::melt() %>%
+  data.frame() %>%
+  ggplot(aes(x = Var1, y = Var2, fill = value)) +
+    scale_x_discrete(position = "top") +
+    geom_tile(color = "white") +
+    viridis::scale_fill_viridis("Relative min. depth") +
+    labs(x = "", y = "") 
+
+# cross-check with vimp
+find.interaction(forest_acq,
+                      method = "vimp",
+                      importance = "permute")
+```
+
+
+```{r}
+summary(AR$acq_exp)
+```
+
+
+```{r}
+# extract marginal effect using partial dependence
+acq_exp_seq = seq(350,645,5)
+marginal.effect <- partial(forest_acq,
+                           partial.xvar = "acq_exp",
+                           partial.values = acq_exp_seq)
+
+means.exp <- marginal.effect$regrOutput$acquisition %>% colMeans()
+
+marginal.effect.df <-
+  data.frame(pred.acquisition = means.exp, acq_exp_seq = acq_exp_seq)
+
+ggplot(marginal.effect.df, aes(x = acq_exp_seq, y = pred.acquisition)) +
+  geom_point(shape = 21, color = "purple", size = 2, stroke = 1.2)+
+  geom_smooth(method = "lm", formula = y ~ poly(x,3), se = FALSE, color = "black")+ # try with other values 
+  labs(x = "Average acquisition in $", y = "Predicted acquisition") +
+  scale_x_continuous(breaks = seq(0,150,25))
+```
+
+```{r}
+table(AR$crossbuy)
+```
+
+```{r}
+forest_acq$xvar$acq_exp[forest_acq$xvar$crossbuy == 2]
+```
+```{r}
+forest_acq$xvar
+```
+```{r}
+seq(15,65,10)
+```
+
+
+```{r}
+grp <- seq(15,65,10)
+get_coplot_data <- function(i) {
+
+subset.coplot <- forest_acq$xvar$acq_exp[forest_acq$xvar$employees > i]
+coplot <- plot.variable(forest_acq,
+                        xvar.names = "acq_exp",
+                        partial = TRUE,
+                        subset = subset.coplot) }
+
+coplot_data_list <- purrr::map(grp,get_coplot_data)
+
+coplot.df <- data.frame(acq_exp =
+                          c(coplot_data_list[[1]]$pData[[1]]$x.uniq,
+                            coplot_data_list[[2]]$pData[[1]]$x.uniq,
+                            coplot_data_list[[3]]$pData[[1]]$x.uniq,
+                            coplot_data_list[[4]]$pData[[1]]$x.uniq,
+                            coplot_data_list[[5]]$pData[[1]]$x.uniq,
+                            coplot_data_list[[6]]$pData[[1]]$x.uniq),
+                        predicted_acquisition = 
+                          c(coplot_data_list[[1]]$pData[[1]]$yhat,
+                            coplot_data_list[[2]]$pData[[1]]$yhat,
+                            coplot_data_list[[3]]$pData[[1]]$yhat,
+                            coplot_data_list[[4]]$pData[[1]]$yhat,
+                            coplot_data_list[[5]]$pData[[1]]$yhat,
+                            coplot_data_list[[6]]$pData[[1]]$yhat),
+                        groups = as.factor(rep(grp, each = 25)))
+
+
+coplot.df %>%
+  filter(groups %in% c(45,55)) %>%
+  ggplot(aes(x = acq_exp, y = predicted_acquisition, fill = groups, color = groups))+
+  geom_point(shape = 21, color = "black", size = 4, stroke = 1.2)+
+  stat_smooth() +
+  scale_fill_brewer(palette = "Set1") +
+  scale_color_brewer(palette = "Set1") +
+  labs(y = "Predicted acquisition", x = "Average acquisition expense in $") +
+  guides(fill = guide_legend(override.aes = list(linetype = 0)))
+```
+
+
+```{r}
+proximity_mat <- rfsrc(acquisition~acq_exp+acq_exp_sq+
+                         industry+revenue+employees,
+                       data = AR, 
+                       importance = TRUE, 
+                       ntree = 1000,
+                       proximity = "oob")$proximity
+
+proximity_mat[1:50,1:50] %>%
+  as.data.frame(col.names = 1:nrow(AR)) %>%
+  tibble::rowid_to_column() %>%
+  gather(key = columnid, value = proximity, -rowid) %>%
+  mutate(columnid = as.numeric(substr(columnid,2,3))) %>%
+  ggplot(aes(x = rowid, y = columnid, fill = proximity))+
+   geom_tile() +
+   viridis::scale_fill_viridis("Proximity" ,option = "D") +
+   labs(x = "Case #", y = "Case #")
+```
+
+
+```{r}
+set.seed(123)
+idx.train <- sample(1:nrow(AR), size = 0.7 * nrow(AR))
+train.df <- AR[idx.train,]
+test.df <- AR[-idx.train,]
+
+
+forest_acqT <- rfsrc(acquisition~acq_exp+acq_exp_sq+
+                      industry+revenue+employees,data = train.df, 
+                            importance = TRUE, 
+                            ntree = 1000)
+
+
+
+forest_acqT$err.rate[length(forest_acqT$err.rate)]
+
+
+
+
+data.frame(forest_acqT = forest_acqT$err.rate) %>%
+  na.omit() %>%
+  tibble::rownames_to_column(var = "trees") %>%
+  mutate(trees = as.numeric(trees)) %>%
+  gather(key = forest_type, value = OOB.err, -trees) %>%
+  ggplot(aes(x = trees, y = OOB.err, color = forest_type))+
+  geom_line()+
+  scale_color_brewer(palette = "Set1")+
+  scale_x_continuous(breaks = seq(0,1050,100))+
+  labs(x = "Number of trees", y = "OOB Error rate")
+```
+
+
+
+```{r}
+# Establish a list of possible values for hyper-parameters
+mtry.values <- seq(4,6,1)
+nodesize.values <- seq(4,8,2)
+ntree.values <- seq(4e3,6e3,1e3)
+
+# Create a data frame containing all combinations 
+hyper_grid <- expand.grid(mtry = mtry.values, nodesize = nodesize.values, ntree = ntree.values)
+
+# Create an empty vector to store OOB error values
+oob_err <- c()
+
+# Write a loop over the rows of hyper_grid to train the grid of models
+for (i in 1:nrow(hyper_grid)) {
+
+    # Train a Random Forest model
+   model <- rfsrc(acquisition~acq_exp+acq_exp_sq+
+                      industry+revenue+employees, 
+                            data = train.df,
+                            mtry = hyper_grid$mtry[i],
+                            nodesize = hyper_grid$nodesize[i],
+                            ntree = hyper_grid$ntree[i])  
+  
+                          
+    # Store OOB error for the model                      
+    oob_err[i] <- model$err.rate[length(model$err.rate)]
+}
+
+# Identify optimal set of hyperparmeters based on OOB error
+opt_i <- which.min(oob_err)
+print(hyper_grid[opt_i,])
+```
+
+```{r}
+tuned <- rfsrc(acquisition~acq_exp+acq_exp_sq+
+                      industry+revenue+employees, 
+                            data = train.df,
+                            mtry = 4,
+                            nodesize = 8,
+                            ntree = 6000) 
+```
+
+
+
+```{r}
+
+error.df <- 
+  data.frame(pred1 = predict.rfsrc(forest_acqT,newdata = test.df)$predicted, 
+             pred2 = predict.rfsrc(tuned, newdata = test.df)$predicted, 
+             actual = test.df$acquisition, 
+             customer = test.df$customer) %>%
+  mutate_at(.funs = funs(abs.error = abs(actual - .),
+                         abs.percent.error = abs(actual - .)/abs(actual)),
+            .vars = vars(pred1:pred2))
+
+#mae
+error.df %>%
+  summarise_at(.funs = funs(mae = mean(.)), 
+               .vars = vars(pred1_abs.error:pred2_abs.error))
+
+#mape
+error.df %>%
+  summarise_at(.funs = funs(mape = mean(.*100)), 
+               .vars = vars(pred1_abs.percent.error:pred2_abs.percent.error))
+
+
+# errors from the top customer portfolios
+
+error.df2 <-
+  error.df %>%
+  left_join(test.df, "customer") %>%
+  mutate(customer_portfolio = cut(x = rev <- revenue, 
+               breaks = qu <- quantile(rev, probs = seq(0, 1, 0.25)),
+               labels = names(qu)[-1],
+               include.lowest = T)) 
+
+
+
+portfolio.mae <- 
+  error.df2 %>%
+  group_by(customer_portfolio) %>%
+  summarise_at(.funs = funs(mae = mean(.)), 
+               .vars = vars(pred1_abs.error:pred2_abs.error)) %>%
+  ungroup()
+
+portfolio.mae <- 
+  error.df2 %>%
+  group_by(customer_portfolio) %>%
+  summarise_at(.funs = funs(mae = mean(.*100)), 
+               .vars = vars(pred1_abs.error:pred2_abs.error)) %>%
+  ungroup()
+
+portfolio.errors <- 
+  portfolio.mae %>%
+  left_join(portfolio.mape, "customer_portfolio") %>%
+  gather(key = error_type, value = error, -customer_portfolio) %>%
+  mutate(error_type2 = ifelse(grepl(pattern = "mae", error_type),"MAE","MAPE"),
+         model_type = ifelse(grepl(pattern = "pred1", error_type),"Untuned Forest",
+                        ifelse(grepl(pattern = "pred2", error_type),"Tuned Forest",
+                          ifelse(grepl(pattern = "pred3", error_type),"Linear Model",
+                            ifelse(grepl(pattern = "pred4", error_type),"Non-linear Model A",ifelse(grepl(pattern = "pred5", error_type),"Non-linear Model B","Non-linear w interaction"))))),
+         model_type_reordered = factor(model_type, levels = c("Untuned Forest","Tuned Forest"))) 
+
+
+
+ggplot(portfolio.errors, aes(x = customer_portfolio, 
+                             y = error, 
+                             color = model_type_reordered, 
+                             group = model_type_reordered))+
+  geom_line(size = 1.02)+
+  geom_point(shape = 15) +
+  facet_wrap(~error_type2, scales = "free_y")+
+  scale_color_brewer(palette = "Set1") +
+  labs(y = "Error", x = "Customer portfolios")+
+  theme(legend.position = "top")+
+  guides(color = guide_legend(title = "Model Type", size = 4,nrow = 2,byrow = TRUE))
+
+error.df2 %>%
+  group_by(customer_portfolio) %>%
+  summarise(mean_acquisition_expense = mean(acq_exp),
+            sum_acquisition_expense = sum(acq_exp))
+```
+```{r}
+portfolio.mape
+```
+
+
+```{r}
+?acquisitionRetention
+```
+
+```{r}
+?glm
+```
+
+
+
+
+## I - Executive Summary
+
+
+## II - The Problem
+
+
+## III - Review of Related Literature
+
+
+  
+## IV - Methodology
+
+
+
+## V - Data
+
+
+
+## VI - Findings
+
+
+## VII - Conclusion
+
+
+## Appendix
+
+
+
+
