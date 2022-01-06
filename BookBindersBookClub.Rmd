@@ -1,0 +1,639 @@
+---
+title: "BookBinders Book Club"
+author: "Visha Arumugam(vcu526), Michael Grogan(ldl776),Sanyogita Apte(jlh562)"
+date: "September 28, 2021"
+output: html_document
+---
+<style type="text/css">
+
+h1.title {
+  font-size: 38px;
+  text-align: center;
+}
+h4.author { 
+  font-size: 18px;
+  text-align: center;
+}
+h4.date { 
+  font-size: 18px;
+  text-align: center;
+}
+</style>
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readxl)
+library(caret)
+library(Boruta)
+library(Rcpp)
+library(e1071)
+library(ROSE)
+setwd("~/GitHub/DA6813CaseStudies/Case2")
+#setwd("~/MSDA/Fall 2021/GitHub")
+#setwd("~/MSDA/Fall 2021/GitHub/DA6813CaseStudies")
+#setwd("~/MSDA/Fall 2021/Data Analytics Applications/Case Study 1/DA6813CaseStudies/Case2")
+```
+
+
+```{r readprepare, include=FALSE}
+
+set.seed(12345)
+bbtrain<-read_excel('BBBC-Train.xlsx')
+bbtest<-read_excel('BBBC-Test.xlsx')
+
+# Check for Missing Values 
+#sum(is.na(bbtrain))
+#sum(is.na(bbtest))
+
+
+#remove the index column
+bbtrain<-bbtrain[-1]
+bbtest<-bbtest[-1]
+
+
+bbtrain$Choice<-as.factor(bbtrain$Choice)
+bbtest$Choice<-as.factor(bbtest$Choice)
+
+
+```
+
+```{r preprocess, include=FALSE}
+
+#balance the target classes
+bbtrain.over<-upSample(x=bbtrain[,2:ncol(bbtrain)],y=bbtrain$Choice)
+bbtrain.over$Choice <- factor(bbtrain.over$Class)
+bbtrain.over$Class<-NULL
+
+bbtrain.rose=ROSE(Choice~.,data=bbtrain,seed=12345)$data
+
+
+```
+
+
+
+
+
+
+```{r,models, include=FALSE}
+#Logistic Regression
+# Train the unbalanced dataset for logistic regression model
+log<-glm(Choice~.-First_purchase,data=bbtrain,family=binomial)
+#summary(log)
+# Train the Over-sampled for logistic regression model
+log_over<-glm(Choice~.-First_purchase,data=bbtrain.over,family=binomial)
+#summary(log_over)
+# Train the Synthetically generated  dataset for logistic regression model
+log_rose<-glm(Choice~.-First_purchase,data=bbtrain.rose,family=binomial)
+#summary(log_rose)
+```
+
+
+```{r,include=F}
+
+tunedsvm=tune("svm",Choice~.-First_purchase,data=bbtrain,kernel ="linear",ranges=list(cost=c( 0.001, 0.01, 1,5)))
+
+svm<-tunedsvm$best.model
+
+#summary(svm)
+
+tunedsvm_over=tune("svm",Choice~.-First_purchase,data=bbtrain.over,kernel ="linear",ranges=list(cost=c( 0.001, 0.01, 1,5)))
+
+svm_over<-tunedsvm_over$best.model
+
+#summary(svm_over)
+
+tunedsvm_rose=tune("svm",Choice~.-First_purchase,data=bbtrain.rose,kernel ="linear",ranges=list(cost=c( 0.001, 0.01, 1,5)))
+
+svm_rose<-tunedsvm_rose$best.model
+#summary(svm_rose)
+
+```
+
+```{r,include=F}
+# Linear Regression
+#convert factor back to numeric for linear regression
+bbtrain$Choice<-as.numeric(as.character(bbtrain$Choice))
+bbtrain.over$Choice<-as.numeric(as.character(bbtrain.over$Choice))
+bbtrain.rose$Choice<-as.numeric(as.character(bbtrain.rose$Choice))
+
+lm<-glm(Choice~.-First_purchase,data=bbtrain,family=gaussian)
+lm_over<-glm(Choice~.-First_purchase,data=bbtrain.over,family=gaussian)
+lm_rose<-glm(Choice~.-First_purchase,data=bbtrain.rose,family=gaussian)
+
+#summary(lm)
+#summary(lm_over)
+#summary(lm_rose)
+```
+
+
+```{r,Prediction,include=F}
+# Prediction using unbalanced Dataset
+predlog<-predict(log,bbtest,type="response")
+predsvm<-predict(svm,bbtest)
+predlm<-predict(lm,bbtest)
+
+predlog<-as.factor(ifelse(predlog>0.5,1,0))
+predlm<-as.factor(ifelse(predlm>0.5,1,0))
+
+
+# Prediction using Over sampled Dataset
+predlog.over<-predict(log_over,bbtest,type="response")
+predsvm.over<-predict(svm_over,bbtest)
+predlm.over<-predict(lm_over,bbtest)
+
+predlm.over<-as.factor(ifelse(predlm.over>0.5,1,0))
+predlog.over<-as.factor(ifelse(predlog.over>0.5,1,0))
+
+# Prediction using Synthetically Generated Dataset
+predlog.rose<-predict(log_rose,bbtest,type="response")
+predsvm.rose<-predict(svm_rose,bbtest)
+predlm.rose<-predict(lm_rose,bbtest)
+
+
+predlm.rose<-as.factor(ifelse(predlm.rose>0.5,1,0))
+predlog.rose<-as.factor(ifelse(predlog.rose>0.5,1,0))
+
+```
+
+
+
+```{r echo=F,include=F}
+#Prediction and test are all ordered so 0 is the positive value, so reverse them here 
+bbtest$Choice<-factor(bbtest$Choice,levels=rev(levels(bbtest$Choice)))
+predlog<-factor(predlog,levels=rev(levels(predlog)))
+predlog.over<-factor(predlog.over,levels=rev(levels(predlog.over)))
+predlog.rose<-factor(predlog.rose,levels=rev(levels(predlog.rose)))
+predsvm<-factor(predsvm,levels=rev(levels(predsvm)))
+predsvm.over<-factor(predsvm.over,levels=rev(levels(predsvm.over)))
+predsvm.rose<-factor(predsvm.rose,levels=rev(levels(predsvm.rose)))
+predlm<-factor(predlm,levels=rev(levels(predlm)))
+predlm.over<-factor(predlm.over,levels=rev(levels(predlm.over)))
+predlm.rose<-factor(predlm.rose,levels=rev(levels(predlm.rose)))
+```
+
+
+### I - Executive Summary
+
+We recommend that the Bookbinders Book Club begin to applying logistic regression to their customer sales data in order to maximize profit when mailing brochures to larger markets. We found that by training models on synthetically balanced purchase data, we can improve profitability by over 86% vs the scenario where the company does not target their brochures.
+
+
+
+### II - The Problem
+
+The Bookbinders Book Club is a specialty book distributor that is seeking to survive in an business environment increasingly dominated by superstores like Amazon that are able to leverage economies of scale to out-compete book clubs and smaller retail stores. In order to be more competitive, BBBC has collected data on its customers and plans to use that data to identify the characteristics of the individuals that are most likely to buy a book when mailed a specialty brochure.
+
+The data they have on their customers is primarily numeric data relating to how many books the customer has bought from different categories such as Cooking, Art, etc.
+
+They have specified that they want to find the most useful model out of the following options: logistic regression, linear regression, and support vector machine.
+
+Ultimately, BBBC would like to see the potential profit from mailing brochures to their Midwest client-base of 50,000 using a targeted model compared with sending a brochure to the entire population.
+
+We will show how we evaluated the three models and determined the top performer in terms of potential profit for their Midwest market.
+
+## III - Review of Related Literature
+There were very few Marketing Analysis happened with this BookBinders Book club data set and based upon the usage of various tools and technologies,various exploration and various prediction techniques, different analysis came with different conclusion and Recommendation.
+
+Few of the Analysis examples on this data set uses the choice based analysis , which will evaluate the effectiveness of marketing efforts based on past purchase data at rather low costs. As per the choice based analysis, it is concluded that every person who has purchased a product within the past four months will be considered a good target in order to promote the direct marketing campaign for the book "The Art History of Florence".
+
+Some analysis has been conducted using RFM analysis (which is a marketing technique used to quantitatively rank and group customers based on the recency, frequency and monetary total of their recent transactions to identify the best customers and perform targeted marketing campaigns.) and binary logistic regression in order to promote the direct marketing campaign for the book "The Art History of Florence".
+
+
+
+## IV - Methodology
+We are going to use three prediction algorithm techniques to identify the potential buyer of the book through direct mail brochure. The three models are as follows Linear Regression, Logistic Regression and Support Vector Machine.
+
+To simplify and improve our models, we would eliminate predictors from the model that are not significant. However when performing exploratory modeling of the training data, most of the variables were shown to be significant. The exception is that the inclusion of the 'First_purchase' variable results in a failure to converge for the logistic model. Upon further examination, there is a statisticall significant difference in means between the buying and nonbuying customers this t test shows:
+
+
+```{r}
+t.test(bbtrain$First_purchase[bbtrain$Choice==0],bbtrain$First_purchase[bbtrain$Choice==1])
+
+```
+However the difference between the means is so small as to be useless in terms of prediction, because the distribution of the variable is much wider.
+```{r}
+table(bbtrain$First_purchase)
+```
+
+As a result, this variable is excluded from the models.
+
+The data then needs to be balanced for the target class, because with the unmodified data set a classifier could achieve high accuracies by depending on the population bias in the sample. A balanced training set is created by resampling the "yes" observations to match the quantity of "no" observations. However, after the classifier is trained, it will be tested on the unbalanced test set in order to determine how the classifier would perform under real conditions.
+
+We choose to test all three models on three different sets of training data with different methods of resampling. The first with unbalanced, unaltered data. The second training set resamples the "buy" observations so that they equal the "nonbuy" observations so they end up equal. The third set uses ROSE (Random Oversampling Examples)
+
+Following is a brief summary of the classifiers we used:
+
+**Linear Regression:**
+  Linear regression attempts to model the relationship between dependent and independent variables by fitting a linear equation to observed data. The most common method for fitting a regression line is the method of least-squares. This method calculates the best-fitting line for the observed data by minimizing the sum of the squares of the vertical deviations from each data point to the line.
+  
+**Logistic Regression:**
+  Logistic Regression is a parametric classification method in which is used to model the probability of a certain class or event existing based upon the independent variables.In Logistic Regression, we don’t directly fit a straight line to our data like in linear regression. Instead, we fit a S shaped curve, called Sigmoid, to our observations.
+  
+**Support Vector Machines:**
+  SVM is a learning algorithm used in regression tasks. However, SVM  is preferable in classification tasks. This algorithm is based on the following idea: if a classifier is effective in separating convergent non-linearly separable data points, then it should perform well on dispersed ones. SVM finds the best separating line that maximizes the distance between the hyperplanes of decision boundaries.
+  
+
+Because the target variable (Choice) is a binary variable, it doesn't lend itself well to linear regression. And yet, we can still form a version of classification by rounding the predicted value of Choice to the nearest integer. This is not equivalent to the probabilities produced by the logistic regression, but we can use the same technique for assigning the prediction a label of 1 or 0.
+
+Compare below the linear regression of Amount_purchased vs the logistic regression
+
+```{r,echo=F}
+
+par(mfrow=c(1,2))
+
+bbtrain$Choice<-as.numeric(as.character(bbtrain$Choice))
+lmexample<-glm(Choice~Amount_purchased,bbtrain,family=gaussian)
+plot(Choice~Amount_purchased,data=bbtrain)
+abline(lmexample)
+
+
+
+logexample<-glm(Choice~Amount_purchased+P_Art,bbtrain,family=binomial)
+newdata<-data.frame(Amount_purchased=seq(min(bbtrain$Amount_purchased),max(bbtrain$Amount_purchased),len=500),P_Art=seq(min(bbtrain$P_Art),max(bbtrain$P_Art),len=500))
+newdata$Choice<-predict(logexample,newdata,type='response')
+  
+
+plot(Choice~Amount_purchased,data=bbtrain)
+lines(Choice~Amount_purchased,data=newdata)
+
+```
+
+
+
+
+
+### V - Data
+The dataset to be used is the sample of Bookbinders Book Club customers from Pennsylvania, New York, and Ohio Which contains the details of whether the customers are willing to buy the book "The Art of Florescence" or not through direct mailing the brochure. 
+
+Along the 1600 records in the dataset, 400 members who bought the book and 1200 who didn't bought the book, which ends up in a imbalanced dataset. As part of this Case study we have tried a Oversampling and Synthetically Data Generation sampling in order to increase the prediction of customers who will buy the book.
+
+**Oversampling:**It replicates the observations from minority class to balance the data. An advantage of using this method is that it leads to no information loss. The disadvantage of using this method is that, since oversampling simply adds replicated observations in original data set, it ends up adding multiple observations of several types, thus leading to overfitting. 
+
+**Synthetic Data Generation:**Instead of replicating and adding the observations from the minority class, it overcome imbalances by generates artificial data based on feature space (rather than data space) similarities from minority samples. It is also a type of oversampling technique.
+
+```{r, echo=FALSE}
+par(mfrow=c(2,2))
+bbtrain$Choice<-as.factor(as.character(bbtrain$Choice))
+plot(bbtrain$Choice,main="Unbalanced Dataset")
+
+bbtrain.over$Choice<-as.factor(as.character(bbtrain.over$Choice))
+plot(bbtrain.over$Choice,main="Over-Sampling Dataset")
+
+bbtrain.rose$Choice<-as.factor(as.character(bbtrain.rose$Choice))
+plot(bbtrain.rose$Choice,main="Synthetically Generated Dataset")
+```
+
+
+
+### VI - Findings
+
+```{r echo=F}
+print("Logit Unbalanced")
+
+print(caret::confusionMatrix(predlog,bbtest$Choice)$table)
+
+
+print("Logit Overbalanced")
+
+print(caret::confusionMatrix(predlog.over,bbtest$Choice)$table)
+
+
+print("Logit Synthetic balanced")
+
+print(caret::confusionMatrix(predlog.rose,bbtest$Choice)$table)
+
+
+
+
+###I don't understand these accuracy measures, do we need them?
+#print(accuracy.meas(bbtest$Choice,predlog))
+
+#
+
+#print(accuracy.meas(bbtest$Choice,predlog.over))
+
+#
+
+#print(accuracy.meas(bbtest$Choice,predlog.rose))
+
+#
+```
+
+
+```{r echo=F}
+
+
+print("Logit ROC Curves")
+roc.curve(bbtest$Choice,predlog,col="blue")
+roc.curve(bbtest$Choice,predlog.over,add.roc = TRUE,col="green")
+roc.curve(bbtest$Choice,predlog.rose,add.roc = TRUE,col="brown")
+```
+
+
+```{r echo=F}
+print("SVM Confusion Matrices")
+print("SVM Unbalanced")
+print(caret::confusionMatrix(predsvm,bbtest$Choice)$table)
+
+
+print("SVM Overbalanced")
+print(caret::confusionMatrix(predsvm.over,bbtest$Choice)$table)
+
+print("SVM ROSE balanced")
+print(caret::confusionMatrix(predsvm.rose,bbtest$Choice)$table)
+
+
+
+###I don't understand these accuracy measures, do we need them?
+#print(accuracy.meas(bbtest$Choice,predsvm))
+
+#
+
+#print(accuracy.meas(bbtest$Choice,predsvm.over))
+
+#
+
+#print(accuracy.meas(bbtest$Choice,predsvm.rose))
+
+#
+```
+
+
+```{r echo=F}
+print("SVM ROC Curves")
+roc.curve(bbtest$Choice,predsvm,col="blue")
+roc.curve(bbtest$Choice,predsvm.over,add.roc = TRUE,col="green")
+roc.curve(bbtest$Choice,predsvm.rose,add.roc = TRUE,col="brown")
+```
+
+```{r echo=F}
+print("Linear Model Confusion Matrix")
+
+print("Linear Unbalanced")
+print(caret::confusionMatrix(predlm,bbtest$Choice)$table)
+
+
+print("Linear Overbalanced")
+print(caret::confusionMatrix(predlm.over,bbtest$Choice)$table)
+
+
+print("Linear Synthetic balanced")
+print(caret::confusionMatrix(predlm.rose,bbtest$Choice)$table)
+
+
+
+#print(accuracy.meas(bbtest$Choice,predlm))
+#print(accuracy.meas(bbtest$Choice,predlm.over))
+#print(accuracy.meas(bbtest$Choice,predlm.rose))
+```
+
+
+We calculate the performance of the model in terms of profitability by first determining the profitability of the scenario with no discrimination as to who receives a brochure.
+
+If the population of 50,000 Midwest customers has the same fraction of their population as buyers of BBBC books (8.8%), then the income potential from those buyers if \$45,235 if they are all correctly identified. If all 50,000 customers are sent a brochure, the mailing costs will be \$32,500 at \$0.65 per brochure. This blanket approach would yield an ultimate profit of \$12,735
+
+One by one, we will show how this profitability changes based on the model that is used. 
+First we multiply the population by the detection prevalence of the model, which is the fraction of the population that the model predicts will buy a book if mailed a brochure.
+Next, we multiply this subset of the population by the positive predictive value, which is the fraction of our predicted buyers that actually turn out to be buyers.
+
+So as opposed to calculating profits and costs based on the entire 50,000 Midwesterners, we calculate them based on the fraction of the population that the model chooses as potential buyers
+
+The list of percentages below details the extent to which each model outperforms or underperforms the profitability of the blanket approach.
+
+
+```{r}
+#cost is .65 per mail sent, book cost is 15 with overhead of 45% of cost, and selling price is 31.95
+#The following assumes that Midwest will have a similar buying population as the test data
+
+
+predictions<-list(predlm,predlm.over,predlm.rose,predlog,predlog.over,predlog.rose,predsvm,predsvm.over,predsvm.rose)
+predlabel<-c("Raw Linear Regression","Balanced Linear Regression","Synthetic Linear Regression","Raw Logit","Balanced Logit","Synthetic Logit","Raw SVM","Balanced SVM","Synthetic SVM")
+
+mailcost<-0.65
+profit<-31.95-(15*1.45)
+Midwestbase<-50000
+buyerfraction<-sum(bbtest$Choice==1)/length(bbtest$Choice)
+
+blanketprofit<-((Midwestbase*buyerfraction)*profit)-(Midwestbase*mailcost)
+```
+
+
+```{r,echo=F}
+print("Profitability using Model to select mailers, vs mailing every Midwest customer")
+print(paste("Profit mailing everyone: ","$",round(blanketprofit,2),sep=""))
+```
+
+
+```{r}
+for(i in 1:length(predictions)){
+
+bestpredictor<-unlist(predictions[i])
+
+#percentage of buy predictions made by model and percentage of buy predictions that are correct
+detectionprevalence<-as.numeric(caret::confusionMatrix(bestpredictor,bbtest$Choice)$byClass[10])
+pospredvalue<-as.numeric(caret::confusionMatrix(bestpredictor,bbtest$Choice)$byClass[3])
+
+targetedprofit<-((Midwestbase*detectionprevalence*pospredvalue)*profit)-(Midwestbase*detectionprevalence*mailcost)
+
+outperformance<-(targetedprofit-blanketprofit)*100/blanketprofit
+
+
+print(predlabel[i])
+print(paste(round(outperformance, 2), "%", sep=""))
+}
+
+```
+
+As we can see, the models trained with the unbalanced dataset yielded profitability much lower than the balanced models (even worse profitability than the no-information approach).
+
+The synthetic ROSE method of equalizing the samples actually results in a slight bias towards positive (buy) observations, which results in models that are slightly more likely to assume that the customer is a potential buyer. Because the cost is so low for the brochures, the increased likelihood of predicting buy due to the imbalanced data yields a higher rate of profitability.
+
+As a result, the models yielding the highest profitability were trained on the ROSE dataset, and of those the model with the highest performance is very close between the logistic and linear regression models.  
+
+```{r}
+summary(log_rose)
+
+summary(lm_rose)
+
+print("Linear Synthetic balanced")
+print(caret::confusionMatrix(predlm.rose,bbtest$Choice))
+
+
+print("Logistic Synthetic balanced")
+print(caret::confusionMatrix(predlog.rose,bbtest$Choice))
+
+
+print("SVM Synthetic balanced")
+print(caret::confusionMatrix(predsvm.rose,bbtest$Choice))
+
+```
+The variable with the greatest influence on the purchase of "The Art History of Florence" is unsurprisingly the number of Art books purchased by the customer (P_Art), followed in positive influence by the length of time since the customer last purchased a book (Last_purchase)
+
+Interestingly, the attributes that made it less likely for a customer to buy the book were being male, or having purchased books other than art books.
+
+In fact, a simple decision for determining the likelihood of buying an art book, BBBC could send a brochure to every female who has previously purchased an art book and achieve a positive prediction rate up to 40%
+```{r, echo=F}
+
+print("Test observations that are Female with more than 0 Art Book purchases")
+table((bbtest$Choice[bbtest$Gender==0&bbtest$P_Art>0]))
+
+print("Total test population")
+table((bbtest$Choice))
+
+```
+
+However, given that the company wants a generalized model for predicting which customers should be sent brochures to sell new books which may not necessarily always be art books, they should send the brochure to a sample of their customer base and then use the logistic model to analyze the purchase history of customers for that style of book, and then use that model to determine brochure recipients at the larger scale.
+
+### Appendix
+
+#### Preprocessing the data
+
+```{r, eval=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readxl)
+library(caret)
+library(Boruta)
+library(Rcpp)
+library(e1071)
+library(ROSE)
+setwd("~/GitHub/DA6813CaseStudies/Case2")
+#setwd("~/MSDA/Fall 2021/GitHub")
+#setwd("~/MSDA/Fall 2021/GitHub/DA6813CaseStudies")
+#setwd("~/MSDA/Fall 2021/Data Analytics Applications/Case Study 1/DA6813CaseStudies/Case2")
+```
+
+
+```{r, eval=FALSE}
+
+set.seed(12345)
+bbtrain<-read_excel('BBBC-Train.xlsx')
+bbtest<-read_excel('BBBC-Test.xlsx')
+
+# Check for Missing Values 
+#sum(is.na(bbtrain))
+#sum(is.na(bbtest))
+
+
+#remove the index column
+bbtrain<-bbtrain[-1]
+bbtest<-bbtest[-1]
+
+
+bbtrain$Choice<-as.factor(bbtrain$Choice)
+bbtest$Choice<-as.factor(bbtest$Choice)
+
+
+```
+
+```{r, eval=FALSE}
+
+#balance the target classes
+bbtrain.over<-upSample(x=bbtrain[,2:ncol(bbtrain)],y=bbtrain$Choice)
+bbtrain.over$Choice <- factor(bbtrain.over$Class)
+bbtrain.over$Class<-NULL
+
+bbtrain.rose=ROSE(Choice~.,data=bbtrain,seed=12345)$data
+
+
+```
+
+
+
+#### Training different models
+```{r, eval=FALSE}
+#Logistic Regression
+# Train the unbalanced dataset for logistic regression model
+log<-glm(Choice~.-First_purchase,data=bbtrain,family=binomial)
+#summary(log)
+# Train the Over-sampled for logistic regression model
+log_over<-glm(Choice~.-First_purchase,data=bbtrain.over,family=binomial)
+#summary(log_over)
+# Train the Synthetically generated  dataset for logistic regression model
+log_rose<-glm(Choice~.-First_purchase,data=bbtrain.rose,family=binomial)
+#summary(log_rose)
+```
+
+
+```{r,eval=F}
+
+tunedsvm=tune("svm",Choice~.-First_purchase,data=bbtrain,kernel ="linear",ranges=list(cost=c( 0.001, 0.01, 1,5)))
+
+svm<-tunedsvm$best.model
+
+#summary(svm)
+
+tunedsvm_over=tune("svm",Choice~.-First_purchase,data=bbtrain.over,kernel ="linear",ranges=list(cost=c( 0.001, 0.01, 1,5)))
+
+svm_over<-tunedsvm_over$best.model
+
+#summary(svm_over)
+
+tunedsvm_rose=tune("svm",Choice~.-First_purchase,data=bbtrain.rose,kernel ="linear",ranges=list(cost=c( 0.001, 0.01, 1,5)))
+
+svm_rose<-tunedsvm_rose$best.model
+#summary(svm_rose)
+
+```
+
+```{r,eval=F}
+# Linear Regression
+#convert factor back to numeric for linear regression
+bbtrain$Choice<-as.numeric(as.character(bbtrain$Choice))
+bbtrain.over$Choice<-as.numeric(as.character(bbtrain.over$Choice))
+bbtrain.rose$Choice<-as.numeric(as.character(bbtrain.rose$Choice))
+
+lm<-glm(Choice~.-First_purchase,data=bbtrain,family=gaussian)
+lm_over<-glm(Choice~.-First_purchase,data=bbtrain.over,family=gaussian)
+lm_rose<-glm(Choice~.-First_purchase,data=bbtrain.rose,family=gaussian)
+
+#summary(lm)
+#summary(lm_over)
+#summary(lm_rose)
+```
+
+
+```{r,eval=F}
+# Prediction using unbalanced Dataset
+predlog<-predict(log,bbtest,type="response")
+predsvm<-predict(svm,bbtest)
+predlm<-predict(lm,bbtest)
+
+predlog<-as.factor(ifelse(predlog>0.5,1,0))
+predlm<-as.factor(ifelse(predlm>0.5,1,0))
+
+
+# Prediction using Over sampled Dataset
+predlog.over<-predict(log_over,bbtest,type="response")
+predsvm.over<-predict(svm_over,bbtest)
+predlm.over<-predict(lm_over,bbtest)
+
+predlm.over<-as.factor(ifelse(predlm.over>0.5,1,0))
+predlog.over<-as.factor(ifelse(predlog.over>0.5,1,0))
+
+# Prediction using Synthetically Generated Dataset
+predlog.rose<-predict(log_rose,bbtest,type="response")
+predsvm.rose<-predict(svm_rose,bbtest)
+predlm.rose<-predict(lm_rose,bbtest)
+
+
+predlm.rose<-as.factor(ifelse(predlm.rose>0.5,1,0))
+predlog.rose<-as.factor(ifelse(predlog.rose>0.5,1,0))
+
+```
+
+
+
+```{r echo=F,eval=F}
+#Prediction and test are all ordered so 0 is the positive value, so reverse them here 
+bbtest$Choice<-factor(bbtest$Choice,levels=rev(levels(bbtest$Choice)))
+predlog<-factor(predlog,levels=rev(levels(predlog)))
+predlog.over<-factor(predlog.over,levels=rev(levels(predlog.over)))
+predlog.rose<-factor(predlog.rose,levels=rev(levels(predlog.rose)))
+predsvm<-factor(predsvm,levels=rev(levels(predsvm)))
+predsvm.over<-factor(predsvm.over,levels=rev(levels(predsvm.over)))
+predsvm.rose<-factor(predsvm.rose,levels=rev(levels(predsvm.rose)))
+predlm<-factor(predlm,levels=rev(levels(predlm)))
+predlm.over<-factor(predlm.over,levels=rev(levels(predlm.over)))
+predlm.rose<-factor(predlm.rose,levels=rev(levels(predlm.rose)))
+```
+
+
+
