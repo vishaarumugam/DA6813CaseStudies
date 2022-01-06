@@ -1,0 +1,827 @@
+---
+title: "DOW Jones Index Case"
+author: "Visha Arumugam(vcu526), Michael Grogan(ldl776),Sanyogita Apte(jlh562)"
+date: "October 31, 2021"
+output: html_document
+---
+<style type="text/css">
+
+h1.title {
+  font-size: 38px;
+  text-align: center;
+}
+h4.author { 
+  font-size: 18px;
+  text-align: center;
+}
+h4.date { 
+  font-size: 18px;
+  text-align: center;
+}
+</style>
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+#Task: Build models to predict stock prices and evaluate risks of stocks. 
+#Target per percent_change_next_weeks_price
+#Models to try: Linear Regression, Decision Trees, SVM
+
+#All use-able variables:
+#percent_change_price+percent_change_volume_over_last_wk+time+open+days_to_next_dividend+percent_return_next_dividend+close+high+low+stock+previous_weeks_volume+volume
+
+#Variables used in original study:
+#percent_change_price+percent_change_volume_over_last_wk+days_to_next_dividend+percent_return_next_dividend
+
+
+library(Boruta)
+library(caret)
+library(imputeTS)
+library(e1071)
+library(rpart)
+library(tseries)
+library(quantmod)
+library(reshape2)
+library(lubridate)
+library(ggplot2)
+library(tidyverse)
+
+#setwd("~/GitHub/DA6813CaseStudies/Case3")
+#setwd("~/MSDA/Fall 2021/GitHub")
+#setwd("~/MSDA/Fall 2021/GitHub/DA6813CaseStudies")
+#setwd("~/MSDA/Fall 2021/Data Analytics Applications/Case Study 1/DA6813CaseStudies/Case2")
+setwd("~/MSDA/Fall 2021/Data Analytics Applications/Case Study 1/DA6813CaseStudies/Case3")
+```
+
+
+
+
+
+
+```{r, include=FALSE}
+DOWdata<-read.table('dow_jones_index.data',sep=",",header=T)
+
+
+for(i in c(4:7,12:13)){
+  DOWdata[[i]]<-as.numeric(gsub('\\$','',DOWdata[[i]]))
+  
+}
+DOWdata$date<-as.Date(DOWdata$date,format ="%m/%d/%Y")
+DOWdata<-na_ma(DOWdata)
+DOWdata$time<-as.numeric(DOWdata$date)
+q1<-unique(DOWdata$date[DOWdata$quarter==1])
+q2<-unique(DOWdata$date[DOWdata$quarter==2])
+
+
+for(j in list(q1,q2)){
+  for(i in 1:length(j)){
+    DOWdata$time[DOWdata$date==j[i]]<-i
+}
+}
+
+# Open Lag
+DOWdata=DOWdata %>%
+group_by(stock)%>%
+mutate(open_lag=dplyr::lag(open,n=1))
+
+# High Lag
+DOWdata=DOWdata %>%
+group_by(stock)%>%
+mutate(high_lag=dplyr::lag(high,n=1))
+
+# Low Lag
+DOWdata=DOWdata %>%
+group_by(stock)%>%
+mutate(low_lag=dplyr::lag(low,n=1))
+
+# Close Lag
+DOWdata=DOWdata %>%
+group_by(stock)%>%
+mutate(close_lag=dplyr::lag(close,n=1))
+
+# percent_change_price
+DOWdata=DOWdata %>%
+group_by(stock)%>%
+mutate(percent_change_price_lag=dplyr::lag(percent_change_price,n=1))
+
+# Percent Change Volume Over Last Week Lag
+DOWdata=DOWdata %>%
+group_by(stock)%>%
+mutate(percent_change_volume_over_last_wk_lag=dplyr::lag(percent_change_volume_over_last_wk,n=1))
+
+# Percent Change Next Weeks Price Lag
+DOWdata=DOWdata %>%
+group_by(stock)%>%
+mutate(percent_change_next_weeks_price_lag=dplyr::lag(percent_change_next_weeks_price,n=1))
+
+# days_to_next_dividend_lag
+DOWdata=DOWdata %>%
+group_by(stock)%>%
+mutate(days_to_next_dividend_lag=dplyr::lag(days_to_next_dividend,n=1))
+
+# Percent Return Next Dividend Lag
+DOWdata=DOWdata %>%
+group_by(stock)%>%
+mutate(percent_return_next_dividend_lag=dplyr::lag(percent_return_next_dividend,n=1))
+
+# Next Weeks Close Lag
+DOWdata=DOWdata %>%
+group_by(stock)%>%
+mutate(next_weeks_close_lag=dplyr::lag(next_weeks_close,n=1))
+
+# Next Weeks Open Lag
+DOWdata= DOWdata %>%
+group_by(stock) %>%
+mutate(next_weeks_open_lag = dplyr::lag(next_weeks_open, n =1))
+
+# Volume Lag
+DOWdata= DOWdata %>%
+group_by(stock) %>%
+mutate(volume_lag = dplyr::lag(volume, n =1))
+
+# Previous Volume Lag
+DOWdata= DOWdata %>%
+group_by(stock) %>%
+mutate(previous_weeks_volume_lag = dplyr::lag(previous_weeks_volume, n =1))
+
+train<-DOWdata[DOWdata$quarter==1,]
+test<-DOWdata[DOWdata$quarter==2,]
+
+
+```
+
+
+
+```{r, include=FALSE}
+#index for CAPM
+DOWIndex <- read.csv("DOW_2011Q1Q2.csv", header=TRUE, sep=",") 
+closedf<-as.data.frame.matrix(xtabs(~date+stock,DOWdata))
+for(i in unique(DOWdata$stock)){
+closedf[i]<-DOWdata$close[DOWdata$stock==i]
+}
+
+closedf$DOW<-DOWIndex[,5]
+
+Returns<-na.omit(apply(closedf,2,Delt))
+
+
+CAPM<-data.frame(matrix(ncol = 2, nrow = 0))
+
+for(i in unique(DOWdata$stock)){
+betta<-summary(lm(as.formula(paste(i,"DOW",sep="~")),as.data.frame(Returns)))
+CAPM<-rbind(CAPM,c(i,betta$coefficients[2,1]))
+}
+colnames(CAPM) <- c("Stock","Beta")
+str(CAPM)
+CAPM$Beta=as.numeric(CAPM$Beta)
+CAPM=CAPM[order(-CAPM$Beta),]
+#CAPM_sorted <-CAPM[order(-CAPM$Beta),]
+top_n(CAPM,-3,CAPM$Beta)
+
+```
+
+
+
+
+```{r, include=FALSE}
+#writing formulas
+
+#static formulas
+targety<-"percent_change_next_weeks_price"
+fvar<-c("percent_change_price","percent_change_volume_over_last_wk","time",
+        "open","days_to_next_dividend","percent_return_next_dividend","close",
+        "high","low","stock","previous_weeks_volume","volume")
+
+flagvar=c("percent_change_price_lag","percent_change_volume_over_last_wk_lag",
+        "open_lag","days_to_next_dividend_lag","percent_return_next_dividend_lag","close_lag",
+        "high_lag","low_lag","stock","previous_weeks_volume_lag","volume_lag")
+
+flagvarsvm<-c("percent_change_price_lag","percent_change_volume_over_last_wk_lag",
+        "open_lag","days_to_next_dividend_lag","percent_return_next_dividend_lag","close_lag",
+        "high_lag","low_lag","previous_weeks_volume_lag","volume_lag")
+
+ovar<-c("percent_change_price","percent_change_volume_over_last_wk",
+        "days_to_next_dividend","percent_return_next_dividend")
+
+
+svar<-c("time","time:percent_return_next_dividend","close","stock")
+
+
+
+slagvar<-c("percent_return_next_dividend_lag","low_lag","open_lag","close_lag","high_lag","volume_lag",
+        "previous_weeks_volume_lag","stock")
+
+#svm needs to have stock excluded because it can't calculate without variation
+fvarsvm<-c("percent_change_price","percent_change_volume_over_last_wk","time",
+        "open","days_to_next_dividend","percent_return_next_dividend","close",
+        "high","low","previous_weeks_volume","volume")
+
+svarsvm<-c("time","time:percent_return_next_dividend","close")
+
+slagvarsvm<-c("percent_return_next_dividend_lag","low_lag","open_lag","close_lag","high_lag","volume_lag",
+        "previous_weeks_volume_lag")
+
+
+selectformula<-as.formula(paste(targety,paste(svar,collapse="+"),sep="~"))
+fullformula<-as.formula(paste(targety,paste(fvar,collapse="+"),sep="~"))
+originalformula<-as.formula(paste(targety,paste(ovar,collapse="+"),sep="~"))
+
+selectformulasvm<-as.formula(paste(targety,paste(svarsvm,collapse="+"),sep="~"))
+fullformulasvm<-as.formula(paste(targety,paste(fvarsvm,collapse="+"),sep="~"))
+slagformulasvm<-as.formula(paste(targety,paste(slagvarsvm,collapse="+"),sep="~"))
+
+
+fulllagformula<-as.formula(paste(targety,paste(flagvar,collapse="+"),sep="~"))
+slagformula<-as.formula(paste(targety,paste(slagvar,collapse="+"),sep="~"))
+
+fulllagformulasvm<-as.formula(paste(targety,paste(flagvarsvm,collapse="+"),sep="~"))
+```
+
+
+```{r, include=FALSE, echo=F, eval=F}
+#boruta_var_imp_output=Boruta(fulllagformula,data=na.omit(train),doTrace=1)
+#boruta_signif <- getSelectedAttributes(boruta_var_imp_output, withTentative = TRUE)
+#boruta_roug_fix_mod=TentativeRoughFix(boruta_var_imp_output)
+#Variable Importance Scores
+#boruta_imps <- attStats(boruta_roug_fix_mod)
+#boruta_imps2 = boruta_imps[boruta_imps$decision != 'Rejected', c('meanImp', 'decision')]
+#boruta_imps2[order(-boruta_imps2$meanImp), ]
+#plot(boruta_var_imp_output, cex.axis=.7, las=2, xlab="", main="Variable Importance")
+```
+
+
+```{r, include=FALSE}
+## Train models
+selectlm<-glm(formula=selectformula,family="gaussian",data=train)
+fulllm<-glm(formula=fullformula,family="gaussian",data=train)
+originallm<-glm(formula=originalformula,family="gaussian",data=train)
+fulllaglm<-glm(formula=fulllagformula,family="gaussian",data=train)
+siglaglm<-glm(formula=slagformula,family="gaussian",data=train)
+
+
+selectsvm<-svm(formula=selectformulasvm,data=train)
+fullsvm<-svm(formula=fullformulasvm,data=train)
+originalsvm<-svm(formula=originalformula,data=train)
+fulllagsvm<-svm(formula=fulllagformulasvm,data=train)
+siglagsvm<-svm(formula=slagformulasvm,data=train)
+
+
+#selecttree<-rpart(formula=selectformulasvm,method = "anova",data=train) can't handle interaction
+fulltree<-rpart(formula=fullformulasvm,method = "anova",data=train)
+originaltree<-rpart(formula=originalformula,method = "anova",data=train)
+fulllagtree<-rpart(formula=fulllagformulasvm,method = "anova",data=train)
+siglagtree<-rpart(formula=slagformulasvm,method = "anova",data=train)
+```
+
+
+
+
+### I - Executive Summary
+
+To determine the model that is best suited to predict stock price for the following week using Dow Jones Market Index data set, we tested a variety of different regression algorithms with different combinations of predictive variables. Ultimately we came to the conclusion that support vector regression utilizing the variables such as week number, the closing price of the current week, and the interactive effect between time and the return on the next dividend for that stock variables had the optimal characteristics in predicting the stock price. 
+
+<Need to Discuss about the stock which has highest risk and lowest risk based on the CAPM beta value>
+
+
+### II - The Problem
+
+It is well-established that the behavior of stock market prices in the aggregate and in the long term is to trend upwards as a result of improvements in technology and increases in production efficiency, both of which are positively correlated with time as individuals and industry build on the knowledge and expertise of previous generations. It is also well-established that in the short-term stock prices are not predictable, especially based on historical information, which is to say that whether a stock or portfolio increased in value has little to no bearing on whether the stock will increase or decrease the following day.
+Metrics about the financial health of the company can tell more about the prospects for the stock price of that company, such as the price-to-earnings ratio, or the level of debt of the company. But even with this level of detail, there is still very little predictive capability on time scales as small as days or weeks.
+
+But in the spirit of validating industry and academic consensus, we will attempt to use historical stock information to build a model that is able to predict future stock performance.
+
+In addition to generating a model for predicting future performance based on past performance, we will also perform an analysis on each of the component stocks vs the overall index in order to identify stocks that vary the most with the index as well as those that most closely align with the index.
+
+
+## III - Review of Related Literature
+
+There were many Forecasting and prediction analysis happened with stock market index data set and based upon the usage of various exploration, prediction techniques and hyper parameter optimization, different analysis came with different conclusion and Recommendation.
+
+As per the Journal of "Visualization and Analysis in bank Direct marketing prediction **"Dynamic-Radius Species-Conserving Genetic Algorithm for the Financial Forecasting of Dow Jones Index Stocks"** by Michael Scott Brown, Michael J. Pelosi, and Henry Dirska, Dynam-ic-radius Species-conserving Genetic Algorithm (DSGA) to select stocks to purchase from the Dow Jones Index.These rules are then used to predict stock prices. DSGA is an NGA(Niche Genetic Algorithm) that uses a clustering algorithm enhanced by a tabu list and radial variations. DSGA also uses a shared fitness algorithm (Which encourages the Genetic Algorithm to locate stocks that should produce favorable returns in the following week) to investigate different areas of the domain.
+As per the conclusion the DSGA algorithm did very well in predicting single stock selection for a week of the 30 Dow Jones Index stocks. It produced returns many times greater than the Dow Jones Index, which is often considered a safe and lucrative investment selection. The Dow Jones Index stocks make a great set of stock for forecasting systems because if the system predicts a stock incorrectly losses are normally minimal. DSGA produces these results by examining only four stock characteristics: change in stock price, change in stock volume, days until the next dividend and return of next dividend.
+  
+  Similarly in Stock Price Forecast Based on LSTM Neural Network by Qiang Jiang and Chenglin Tang, Deep Learning techniques such as RNN(Recurrent Neural network) and LSTM(long-short term memory) is used to find the accuracy in predict the stock price in both Shanghai Composite Index and the Dow Jones Index. As per the conclusion the LSTM works very well on Dow Jones Index data set.
+  
+  In this analysis we are also going to try different basic Regression techniques such as linear regression, Decision Trees, support vector Regression with different hyper parameters and different predictors and compare the results based on the accuracy in order to identify the appropriate model in predicting stock price. Also we are using CAPM(Capital Asset Price Marketing) technique to find out the stock with maximum percent of return.
+  
+## IV - Methodology
+
+We will use the dataset from the study by Brown, M. S., Pelosi, M. & Dirska, H for testing their genetic algorithm. This dataset is the first two quarters of 2011, and we will use the first quarter for training our models, and then the second quarter for testing the effectiveness of the models.
+
+As the target variable for training the models we use the "percent_change_next_weeks_price" field in the dataset. We know value of this variable because this is all historical information, but for the purposes of training the model we will only have access to the the data that we would know in the "present". This means for the purpose of training our models we exclude the other variables that relate to the "next_week" because in the real world we wouldn't have access to that information yet.
+
+We will train a models using a combination of algorithms and component variables. The algorithms we will use are Linear Regression, linear Support Vector Regression, and Decision Tree. For the predictor selections, we will use a full model, a model using the variables that were used in the aforementioned original study ("percent_change_price","percent_change_volume_over_last_wk","days_to_next_dividend","percent_return_next_dividend"). We will also use feature sets that are comprised of the lagged values of all the numeric variables in order to try to capture any delayed effect. This means for those models the following week's stock performance will be predicted using data from two weeks before.
+
+Additionally we will use a selection of variables that we selected by trial and error that generated a linear model with the most significant variables, which are as follows: ("time","time:percent_return_next_dividend","close")
+This is also the smallest set of predictors that we will use for any of the models.
+
+After training all of the models, we will compare the Root Mean Squared Error of each model to determine which model performs with the most accuracy at the total index level. And because the exercise is ultimately to determine whether stocks performance can be accurately predicted, we will apply the models to the individual stocks to see how well the model trained on the all of the data performs on individual stocks.
+
+After training the models, we even noticed that at the individual stock level, the model would occasionally have a lower MSE using the test data than with the training data (the same data that was used to train the model). This further goes to show the random behavior of the stock performance
+
+Following is a brief summary of the Regression Method we used:
+
+**Linear Regression:**
+  Linear regression attempts to model the relationship between dependent and independent variables by fitting a linear equation to observed data. The most common method for fitting a regression line is the method of least-squares. This method calculates the best-fitting line for the observed data by minimizing the sum of the squares of the vertical deviations from each data point to the line.
+
+**Decision Tree:**
+  Decision Trees are a non-parametric supervised learning method used for both classification and regression tasks. The goal is to create a model that predicts the value of a target variable by learning simple decision rules inferred from the data features.The decision rules are generally in form of if-then-else statements.The deeper the tree, the more complex the rules and fitter the model.
+  
+**Support Vector Regression:**
+  SVR is a learning algorithm used in regression tasks works on the same principle as SVM. SVM  is preferable in classification tasks. This algorithm is based on the following idea: if a classifier is effective in separating convergent non-linearly separable data points, then it should perform well on dispersed ones. SVM finds the best separating line that maximizes the distance between the hyperplanes of decision boundaries.Whereas SVR's objective is to find a hyperplane which effectively has the maximum number of points within that Decision boundary.
+
+### V - Data
+
+The data is composed of the weekly stock price and volume information for the first 25 weeks of 2011, with Q1 serving as the training data and Q2 serving as the test data. In order to allow for the time element to contribute to the prediction it needs to be converted to a form that can apply equally to each period even though their dates are unique. Therefore, the dates are converted into the position of that week in the quarter, from 1-12 for Q1 and 1-13 for Q2 because of the amount of dates that fall in each quarter. This new vector is called time, so the model generated from Q1 can be used on Q2 data.
+
+We also add to the data set the lagged values for each of the numeric variables. As demonstrated below, even when there seems to be a correlation in the lagged values in the aggregate, on an individual stock level the relationship is random at every lag value.
+
+We see that there does seem to be a relationship to the stocks that compose the DOW index, in that they often rise and fall together, but as seen in the lag plots there is no predictive value in just the historical values of the same variables.
+
+
+```{r, include=FALSE}
+ggplot(data=DOWdata, aes(x=date, y=percent_change_next_weeks_price,color=stock)) +
+  geom_point() +
+  xlab("")
+
+ggplot(data=DOWdata, aes(x=date, y=volume,color=stock)) +
+  geom_point() +
+  xlab("")
+ 
+ggplot(data=DOWdata, aes(x=date, y=percent_change_price,color=stock)) +
+  geom_point() +
+  xlab("")
+
+ggplot(data=DOWdata, aes(x=date, y=percent_change_volume_over_last_wk,color=stock)) +
+  geom_point() +
+  xlab("")
+
+ggplot(data=DOWdata, aes(x=date, y=percent_return_next_dividend,color=stock)) +
+  geom_point() +
+  xlab("")
+
+```
+
+```{r, echo=F}
+lag.plot(train$percent_change_next_weeks_price,set.lags = 1:8,layout = c(2,4),labels=FALSE,main = paste("Lag plot for Percentage of price change for next week:","Total"))
+
+for(i in unique(test$stock)){
+
+trainstock<-train[train$stock==i,]
+y=train$percent_change_next_weeks_price[train$stock==i]
+lag.plot(y,set.lags = 1:8,layout = c(2,4),labels=FALSE,main = paste("Lag plot for Percentage of price change for next week:",i))
+
+break
+}
+
+
+lag.plot(train$percent_change_price,set.lags = 1:8,layout = c(2,4),labels=FALSE,main = "Lag plot for Percentage of Price changes:Total")
+for(i in unique(test$stock)){
+
+trainstock<-train[train$stock==i,]
+y=train$percent_change_price[train$stock==i]
+lag.plot(y,set.lags = 1:8,layout = c(2,4),labels=FALSE,main = paste("Lag plot for Percentage of Price changes:",i))
+break
+}
+
+for(i in unique(test$stock)){
+
+trainstock<-train[train$stock==i,]
+y=train$percent_change_volume_over_last_wk[train$stock==i]
+lag.plot(y,set.lags = 1:8,layout = c(2,4),labels=FALSE,
+         main = "Lag Plot for Percent change in volume of stocks traded compared to the previous week")
+break
+}
+
+lag.plot(train$percent_return_next_dividend,set.lags = 1:8,layout = c(2,4),labels=FALSE,main = paste("Percentage of return in the next dividend: Total"))
+for(i in unique(test$stock)){
+
+trainstock<-train[train$stock==i,]
+y=train$percent_return_next_dividend[train$stock==i]
+lag.plot(y,set.lags = 1:8,layout = c(2,4),labels=FALSE,main = paste("Lag Plot for Percentage of return in the next dividend:",i)) 
+break
+}
+```
+
+
+### VI - Findings
+
+By training on Q1 and testing on Q2, the model that yield the lowest Root Mean Squared Error for the percent change in the following week is in fact the support vector machine trained with the selected predictor set of just three elements: time, the interaction of time and percent_return_next_dividend, and the closing price of the current week. Additionally, this model has the smallest difference between the training RMSE and testing RMSE, suggesting that not only is this model the most accurate, but it is the most consistent. 
+
+The next most accurate set of predictors is the original set of predictors from the genetic algorithm study, and using a linear model, although this model has one of the larger differences between the training and test RMSE, so it may just be luck that it edges out the other support vector machines.
+
+```{r, include=FALSE}
+#Change model to compare
+#Compares prediction on data that was used to train the model and then on new test data
+#Due to some stocks having more outliers than average, the training data can yield even worse predictions
+
+
+modellabels<-c("selectlm","fulllm","originallm","fulllaglm","siglaglm","selectsvm","fullsvm","originalsvm",
+               "fulllagsvm","siglagsvm","fulltree","originaltree","fulllagtree","siglagtree")
+modellist<-list(selectlm,fulllm,originallm,fulllaglm,siglaglm,selectsvm,fullsvm,originalsvm,fulllagsvm,siglagsvm,
+                fulltree,originaltree,fulllagtree,siglagtree)
+
+
+results<-as.data.frame(matrix(ncol=5,nrow=0))
+colnames(results) <- c("Model","Stock","TrainRMSE","TestRMSE","Beta")
+
+for(m in 1:length(modellist)){
+for(i in unique(test$stock)){
+model<-modellist[[m]]
+target<-test[test$stock==i,]
+prediction<-predict(model,target)
+
+
+trainstock<-train[train$stock==i,]
+trainedpred<-predict(model,trainstock)
+
+trainmse<-sqrt(mean((trainedpred-trainstock$percent_change_next_weeks_price)^2))
+testmse<-sqrt(mean((prediction-target$percent_change_next_weeks_price)^2))
+
+resultrow<-list(modellabels[m],i,trainmse,testmse,CAPM$Beta[CAPM$Stock==i])
+
+results<-rbind(results,resultrow)
+}
+}
+colnames(results) <- c("Model","Stock","TrainRMSE","TestRMSE","Beta")
+results$Difference<-(results$TestRMSE-results$TrainRMSE)
+
+
+```
+
+
+
+```{r,echo=F}
+#Change model to compare
+#Compares prediction on data that was used to train the model and then on new test data
+#Due to some stocks having more outliers than average, the training data can yield even worse predictions
+
+
+modellabels<-c("selectlm","fulllm","originallm","fulllaglm","siglaglm","selectsvm","fullsvm","originalsvm",
+               "fulllagsvm","siglagsvm","fulltree","originaltree","fulllagtree","siglagtree")
+modellist<-list(selectlm,fulllm,originallm,fulllaglm,siglaglm,selectsvm,fullsvm,originalsvm,fulllagsvm,siglagsvm,
+                fulltree,originaltree,fulllagtree,siglagtree)
+
+
+overallresults<-as.data.frame(matrix(ncol=3,nrow=0))
+colnames(overallresults) <- c("Model","TrainMSE","TestMSE")
+
+for(m in 1:length(modellist)){
+
+model<-modellist[[m]]
+target<-test
+prediction<-predict(model,target)
+
+
+trainstock<-train
+trainedpred<-predict(model,trainstock)
+
+trainmse<-sqrt(mean((trainedpred-trainstock$percent_change_next_weeks_price)^2))
+testmse<-sqrt(mean((prediction-target$percent_change_next_weeks_price)^2))
+
+resultrow<-list(modellabels[m],trainmse,testmse)
+#print(resultrow)
+overallresults<-rbind(overallresults,resultrow)
+
+}
+colnames(overallresults) <- c("Model","TrainRMSE","TestRMSE")
+overallresults$Difference<-(overallresults$TestRMSE-overallresults$TrainRMSE)
+
+overallresults[order(overallresults$TestRMSE),]
+```
+
+The previous table shows the error for the entirety of the datasets but we also want know how these models perform when predicting the behavior of individual stocks. To determine the model that is best able to predict the performance of individual stocks, we generate a distribution table for the models showing the number of stocks that that model predicted Q2 performance with a root mean squared error less than the best RMSE for the total index (2.65)
+
+```{r, echo=FALSE}
+table((results$Model[results$TestRMSE<2.65]))
+
+```
+
+
+Again, the top performer is the SVM model using the three selected predictors. This model is the only one with more than half of the total stocks under this error threshold. So at both the index level and on the individual stock level, this is the model that seems to have the best performance. With that said, an average error in excess of 2 percent is rather large when referring to the predicted percent change in a stock price. As demonstrated in the graphs below which show the actual price change in red and the predicted price change in blue, there are many instances where the predicted change is positive and the actual change is negative, so stocks purchased using this prediction as justification would end up losing money instead.
+
+```{r,echo=F}
+
+model<-selectsvm
+for(i in unique(test$stock)){
+
+target<-test[test$stock==i,]
+prediction<-predict(model,target)
+
+
+trainstock<-train[train$stock==i,]
+trainedpred<-predict(model,trainstock)
+
+
+trainmse<-sqrt(mean((trainedpred-trainstock$percent_change_next_weeks_price)^2))
+testmse<-sqrt(mean((prediction-target$percent_change_next_weeks_price)^2))
+
+
+par(mfrow = c(1, 2))
+plot(trainstock$time,trainstock$percent_change_next_weeks_price,main=paste("Train:",i,"RMSE:",round(trainmse,3)))
+lines(trainstock$percent_change_next_weeks_price,col="red")
+lines(trainedpred,col="blue")
+
+plot(target$time,target$percent_change_next_weeks_price,main=paste("Test:",i,"RMSE:",round(testmse,3)))
+lines(target$percent_change_next_weeks_price,col="red")
+lines(prediction,col="blue")
+
+if(i=="CVX"){break}
+}
+```
+
+
+In addition to this predictive analysis, we performed a comparison of each stock to the DOW index for the weeks in question to determine which stocks are riskier or safer than the index.
+```{r}
+boxplot(Returns,main="Expected Return", xlab="Stocks", ylab="Return",las=2)
+```
+
+By comparing the beta of the stock vs the index to the root mean squared error of the best model, we see that the model seems to be better at predicting stock performance for those stocks that have an inverse relationship with the index performance.
+```{r,echo=F}
+rsvm<-results[results$Model=="selectsvm",]
+rsvm[order(rsvm$TestRMSE),]
+```
+
+### VII - Conclusion
+
+We were able to determine that the best method for predicting next week's stock prices in 2011 for Q2 using Q1 data is a support vector machine using the week number, the closing price of the current week, and the interactive effect between time and the return on the next dividend for that stock. While this may be the best model, it is not an effective technique for outperforming the market because the variance in the individual stock prices is too great to be predicted using this data.
+
+### Appendix
+
+```{r, eval=FALSE}
+DOWdata<-read.table('dow_jones_index.data',sep=",",header=T)
+
+
+for(i in c(4:7,12:13)){
+  DOWdata[[i]]<-as.numeric(gsub('\\$','',DOWdata[[i]]))
+  
+}
+DOWdata$date<-as.Date(DOWdata$date,format ="%m/%d/%Y")
+DOWdata<-na_ma(DOWdata)
+DOWdata$time<-as.numeric(DOWdata$date)
+q1<-unique(DOWdata$date[DOWdata$quarter==1])
+q2<-unique(DOWdata$date[DOWdata$quarter==2])
+
+
+for(j in list(q1,q2)){
+  for(i in 1:length(j)){
+    DOWdata$time[DOWdata$date==j[i]]<-i
+}
+}
+
+# Open Lag
+DOWdata=DOWdata %>%
+group_by(stock)%>%
+mutate(open_lag=dplyr::lag(open,n=1))
+
+# High Lag
+DOWdata=DOWdata %>%
+group_by(stock)%>%
+mutate(high_lag=dplyr::lag(high,n=1))
+
+# Low Lag
+DOWdata=DOWdata %>%
+group_by(stock)%>%
+mutate(low_lag=dplyr::lag(low,n=1))
+
+# Close Lag
+DOWdata=DOWdata %>%
+group_by(stock)%>%
+mutate(close_lag=dplyr::lag(close,n=1))
+
+# percent_change_price
+DOWdata=DOWdata %>%
+group_by(stock)%>%
+mutate(percent_change_price_lag=dplyr::lag(percent_change_price,n=1))
+
+# Percent Change Volume Over Last Week Lag
+DOWdata=DOWdata %>%
+group_by(stock)%>%
+mutate(percent_change_volume_over_last_wk_lag=dplyr::lag(percent_change_volume_over_last_wk,n=1))
+
+# Percent Change Next Weeks Price Lag
+DOWdata=DOWdata %>%
+group_by(stock)%>%
+mutate(percent_change_next_weeks_price_lag=dplyr::lag(percent_change_next_weeks_price,n=1))
+
+# days_to_next_dividend_lag
+DOWdata=DOWdata %>%
+group_by(stock)%>%
+mutate(days_to_next_dividend_lag=dplyr::lag(days_to_next_dividend,n=1))
+
+# Percent Return Next Dividend Lag
+DOWdata=DOWdata %>%
+group_by(stock)%>%
+mutate(percent_return_next_dividend_lag=dplyr::lag(percent_return_next_dividend,n=1))
+
+# Next Weeks Close Lag
+DOWdata=DOWdata %>%
+group_by(stock)%>%
+mutate(next_weeks_close_lag=dplyr::lag(next_weeks_close,n=1))
+
+# Next Weeks Open Lag
+DOWdata= DOWdata %>%
+group_by(stock) %>%
+mutate(next_weeks_open_lag = dplyr::lag(next_weeks_open, n =1))
+
+# Volume Lag
+DOWdata= DOWdata %>%
+group_by(stock) %>%
+mutate(volume_lag = dplyr::lag(volume, n =1))
+
+# Previous Volume Lag
+DOWdata= DOWdata %>%
+group_by(stock) %>%
+mutate(previous_weeks_volume_lag = dplyr::lag(previous_weeks_volume, n =1))
+
+train<-DOWdata[DOWdata$quarter==1,]
+test<-DOWdata[DOWdata$quarter==2,]
+
+
+```
+
+
+
+```{r, eval=FALSE}
+#index for CAPM
+DOWIndex <- read.csv("DOW_2011Q1Q2.csv", header=TRUE, sep=",") 
+closedf<-as.data.frame.matrix(xtabs(~date+stock,DOWdata))
+for(i in unique(DOWdata$stock)){
+closedf[i]<-DOWdata$close[DOWdata$stock==i]
+}
+
+closedf$DOW<-DOWIndex[,5]
+
+Returns<-na.omit(apply(closedf,2,Delt))
+
+
+CAPM<-data.frame(matrix(ncol = 2, nrow = 0))
+
+for(i in unique(DOWdata$stock)){
+betta<-summary(lm(as.formula(paste(i,"DOW",sep="~")),as.data.frame(Returns)))
+CAPM<-rbind(CAPM,c(i,betta$coefficients[2,1]))
+}
+colnames(CAPM) <- c("Stock","Beta")
+
+```
+
+
+
+
+```{r, include=FALSE}
+#writing formulas
+
+#static formulas
+targety<-"percent_change_next_weeks_price"
+fvar<-c("percent_change_price","percent_change_volume_over_last_wk","time",
+        "open","days_to_next_dividend","percent_return_next_dividend","close",
+        "high","low","stock","previous_weeks_volume","volume")
+
+flagvar=c("percent_change_price_lag","percent_change_volume_over_last_wk_lag",
+        "open_lag","days_to_next_dividend_lag","percent_return_next_dividend_lag","close_lag",
+        "high_lag","low_lag","stock","previous_weeks_volume_lag","volume_lag")
+
+flagvarsvm<-c("percent_change_price_lag","percent_change_volume_over_last_wk_lag",
+        "open_lag","days_to_next_dividend_lag","percent_return_next_dividend_lag","close_lag",
+        "high_lag","low_lag","previous_weeks_volume_lag","volume_lag")
+
+ovar<-c("percent_change_price","percent_change_volume_over_last_wk",
+        "days_to_next_dividend","percent_return_next_dividend")
+
+
+svar<-c("time","time:percent_return_next_dividend","close","stock")
+
+
+
+slagvar<-c("percent_return_next_dividend_lag","low_lag","open_lag","close_lag","high_lag","volume_lag",
+        "previous_weeks_volume_lag","stock")
+
+#svm needs to have stock excluded because it can't calculate without variation
+fvarsvm<-c("percent_change_price","percent_change_volume_over_last_wk","time",
+        "open","days_to_next_dividend","percent_return_next_dividend","close",
+        "high","low","previous_weeks_volume","volume")
+
+svarsvm<-c("time","time:percent_return_next_dividend","close")
+
+slagvarsvm<-c("percent_return_next_dividend_lag","low_lag","open_lag","close_lag","high_lag","volume_lag",
+        "previous_weeks_volume_lag")
+
+
+selectformula<-as.formula(paste(targety,paste(svar,collapse="+"),sep="~"))
+fullformula<-as.formula(paste(targety,paste(fvar,collapse="+"),sep="~"))
+originalformula<-as.formula(paste(targety,paste(ovar,collapse="+"),sep="~"))
+
+selectformulasvm<-as.formula(paste(targety,paste(svarsvm,collapse="+"),sep="~"))
+fullformulasvm<-as.formula(paste(targety,paste(fvarsvm,collapse="+"),sep="~"))
+slagformulasvm<-as.formula(paste(targety,paste(slagvarsvm,collapse="+"),sep="~"))
+
+
+fulllagformula<-as.formula(paste(targety,paste(flagvar,collapse="+"),sep="~"))
+slagformula<-as.formula(paste(targety,paste(slagvar,collapse="+"),sep="~"))
+
+fulllagformulasvm<-as.formula(paste(targety,paste(flagvarsvm,collapse="+"),sep="~"))
+```
+
+
+```{r, eval=FALSE}
+## Train models
+selectlm<-glm(formula=selectformula,family="gaussian",data=train)
+fulllm<-glm(formula=fullformula,family="gaussian",data=train)
+originallm<-glm(formula=originalformula,family="gaussian",data=train)
+fulllaglm<-glm(formula=fulllagformula,family="gaussian",data=train)
+siglaglm<-glm(formula=slagformula,family="gaussian",data=train)
+
+
+selectsvm<-svm(formula=selectformulasvm,data=train)
+fullsvm<-svm(formula=fullformulasvm,data=train)
+originalsvm<-svm(formula=originalformula,data=train)
+fulllagsvm<-svm(formula=fulllagformulasvm,data=train)
+siglagsvm<-svm(formula=slagformulasvm,data=train)
+
+
+#selecttree<-rpart(formula=selectformulasvm,method = "anova",data=train) can't handle interaction
+fulltree<-rpart(formula=fullformulasvm,method = "anova",data=train)
+originaltree<-rpart(formula=originalformula,method = "anova",data=train)
+fulllagtree<-rpart(formula=fulllagformulasvm,method = "anova",data=train)
+siglagtree<-rpart(formula=slagformulasvm,method = "anova",data=train)
+```
+
+
+```{r, eval=FALSE}
+#Change model to compare
+#Compares prediction on data that was used to train the model and then on new test data
+#Due to some stocks having more outliers than average, the training data can yield even worse predictions
+
+
+modellabels<-c("selectlm","fulllm","originallm","fulllaglm","siglaglm","selectsvm","fullsvm","originalsvm",
+               "fulllagsvm","siglagsvm","fulltree","originaltree","fulllagtree","siglagtree")
+modellist<-list(selectlm,fulllm,originallm,fulllaglm,siglaglm,selectsvm,fullsvm,originalsvm,fulllagsvm,siglagsvm,
+                fulltree,originaltree,fulllagtree,siglagtree)
+
+
+results<-as.data.frame(matrix(ncol=5,nrow=0))
+colnames(results) <- c("Model","Stock","TrainRMSE","TestRMSE","Beta")
+
+for(m in 1:length(modellist)){
+for(i in unique(test$stock)){
+model<-modellist[[m]]
+target<-test[test$stock==i,]
+prediction<-predict(model,target)
+
+
+trainstock<-train[train$stock==i,]
+trainedpred<-predict(model,trainstock)
+
+trainmse<-sqrt(mean((trainedpred-trainstock$percent_change_next_weeks_price)^2))
+testmse<-sqrt(mean((prediction-target$percent_change_next_weeks_price)^2))
+
+resultrow<-list(modellabels[m],i,trainmse,testmse,CAPM$Beta[CAPM$Stock==i])
+
+results<-rbind(results,resultrow)
+}
+}
+colnames(results) <- c("Model","Stock","TrainRMSE","TestRMSE","Beta")
+results$Difference<-(results$TestRMSE-results$TrainRMSE)
+
+
+```
+
+
+
+```{r,eval=F}
+#Change model to compare
+#Compares prediction on data that was used to train the model and then on new test data
+#Due to some stocks having more outliers than average, the training data can yield even worse predictions
+
+
+modellabels<-c("selectlm","fulllm","originallm","fulllaglm","siglaglm","selectsvm","fullsvm","originalsvm",
+               "fulllagsvm","siglagsvm","fulltree","originaltree","fulllagtree","siglagtree")
+modellist<-list(selectlm,fulllm,originallm,fulllaglm,siglaglm,selectsvm,fullsvm,originalsvm,fulllagsvm,siglagsvm,
+                fulltree,originaltree,fulllagtree,siglagtree)
+
+
+overallresults<-as.data.frame(matrix(ncol=3,nrow=0))
+colnames(overallresults) <- c("Model","TrainMSE","TestMSE")
+
+for(m in 1:length(modellist)){
+
+model<-modellist[[m]]
+target<-test
+prediction<-predict(model,target)
+
+
+trainstock<-train
+trainedpred<-predict(model,trainstock)
+
+trainmse<-sqrt(mean((trainedpred-trainstock$percent_change_next_weeks_price)^2))
+testmse<-sqrt(mean((prediction-target$percent_change_next_weeks_price)^2))
+
+resultrow<-list(modellabels[m],trainmse,testmse)
+#print(resultrow)
+overallresults<-rbind(overallresults,resultrow)
+
+}
+colnames(overallresults) <- c("Model","TrainRMSE","TestRMSE")
+overallresults$Difference<-(overallresults$TestRMSE-overallresults$TrainRMSE)
+
+overallresults[order(overallresults$TestRMSE),]
+```

@@ -1,0 +1,136 @@
+---
+title: "Dow Jones Indes Case Study"
+author: "Visha Arumugam(vcu526), Michael Grogan(ldl776),Sanyogita Apte(jlh562)"
+date: "October , 2021"
+output: html_document
+---
+<style type="text/css">
+
+h1.title {
+  font-size: 38px;
+  text-align: center;
+}
+h4.author { 
+  font-size: 18px;
+  text-align: center;
+}
+h4.date { 
+  font-size: 18px;
+  text-align: center;
+}
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readxl)
+library(caret)
+library(Boruta)
+library(Rcpp)
+library(e1071)
+library(ROSE)
+library(tidyverse)
+library(lubridate)
+library(ggplot2)
+library(mice)
+#setwd("~/GitHub/DA6813CaseStudies/Case2")
+#setwd("~/MSDA/Fall 2021/GitHub")
+#setwd("~/MSDA/Fall 2021/GitHub/DA6813CaseStudies")
+setwd("~/MSDA/Fall 2021/Data Analytics Applications/Case Study 1/DA6813CaseStudies/Case3")
+```
+
+```{r readprepare, include=FALSE}
+Stock_Det = read_csv("dow_jones_index.data")
+str(Stock_Det)
+
+# Convert the price into Numberic value
+Stock_Det$open=as.numeric(gsub("\\$","",Stock_Det$open))
+Stock_Det$high=as.numeric(gsub("\\$","",Stock_Det$high))
+Stock_Det$low=as.numeric(gsub("\\$","",Stock_Det$low))
+Stock_Det$close=as.numeric(gsub("\\$","",Stock_Det$close))
+Stock_Det$next_weeks_open=as.numeric(gsub("\\$","",Stock_Det$next_weeks_open))
+Stock_Det$next_weeks_close=as.numeric(gsub("\\$","",Stock_Det$next_weeks_close))
+
+## Convert the date into Date Format
+Stock_Det$date=mdy(Stock_Det$date)
+summary(Stock_Det)
+# Check the missing Values and the missing Column
+sum(is.na(Stock_Det))
+names(which(sapply(Stock_Det, anyNA)))
+Stock_symbol=unique(Stock_Det[c("stock")])
+stoc_det_num=subset(Stock_Det,select = -c(stock))
+
+
+# The missing values are due to the unavailability of previous week price
+# try to impute the value based on the mean value of the following week changes.
+imputed_data=na_ma(Stock_Det)
+
+## Normalize the dataset
+params=preProcess(imputed_data,method=c("scale","center","nzv"))
+Scale_stock_det= predict(params,imputed_data)
+# Split the data into Train and test
+train_data = subset(Scale_stock_det,(month(date)>=1 & month(date)<=3))
+test_data= subset(Scale_stock_det,(month(date)>=4 & month(date)<=6))
+```
+
+```{r}
+for (i in 1:length(Stock_symbol)){
+  symbol=Stock_symbol[[i]]
+  data=filter(Scale_stock_det,stock==symbol)
+  plot(x=data$date,
+       y=data$percent_change_next_weeks_price,
+       xlab="Weekly price percentage changes for next week from Jan",
+       ylab="Percentage of stock Price Changes for next week")
+  
+}
+```
+```{r}
+plot(x=Scale_stock_det$date,
+       y=Scale_stock_det$percent_change_next_weeks_price,
+       xlab="Weekly price percentage changes for next week from Jan",
+       ylab="Percentage of stock Price Changes for next week")
+abline(lm(Scale_stock_det$percent_change_next_weeks_price~Scale_stock_det$date))
+```
+
+
+```{r}
+ggplot(data=Scale_stock_det, aes(x=date, y=percent_change_next_weeks_price,color=stock)) +
+  geom_point() +
+  geom_smooth(method="lm")
+  xlab("")
+```
+
+```{r}
+ggplot(data=Scale_stock_det, aes(x=date, y=open,color=stock)) +
+  geom_point() +
+  geom_smooth(method="lm")
+  xlab("")
+```
+
+```{r}
+ggplot(data=Scale_stock_det, aes(x=date, y=close,color=stock)) +
+  geom_point() +
+  geom_smooth(method="lm")
+  xlab("")
+```
+```{r}
+ggplot(data=Scale_stock_det, aes(x=date, y=percent_change_price,color=stock)) +
+  geom_point() +
+  geom_smooth(method="lm")
+  xlab("")
+```
+```{r}
+ggplot(data=Scale_stock_det, aes(x=date, y=percent_change_price,color=stock)) +
+  geom_point() +
+  geom_smooth(method="lm")
+  xlab("")
+```
+
+```{r}
+ggscatter(Scale_stock_det, x = "date", y = "percent_change_next_weeks_price",
+                add = "reg.line",               # Add regression line
+                conf.int = TRUE,                # Add confidence interval
+                color = "stock", # Color by groups "cyl"                   # Change point shape by groups "cyl"
+                )
+```
+
+
